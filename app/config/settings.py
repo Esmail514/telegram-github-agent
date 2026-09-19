@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -88,6 +88,22 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Validators
     # ------------------------------------------------------------------
+    @field_validator(
+        "GITHUB_APP_ID",
+        "GITHUB_INSTALLATION_ID",
+        "GITHUB_PRIVATE_KEY_PATH",
+        "GITHUB_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GOOGLE_GENERATIVEAI_API_KEY",
+        mode="before",
+    )
+    @classmethod
+    def empty_str_to_none(cls, v: object) -> object:
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
     @model_validator(mode="after")
     def validate_github_auth(self) -> Settings:
         has_app = (

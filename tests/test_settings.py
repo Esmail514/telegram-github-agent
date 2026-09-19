@@ -20,7 +20,7 @@ def test_settings_requires_github_auth(monkeypatch):
 
         import app.config.settings as m
         reload(m)
-        m.Settings()
+        m.Settings(_env_file=None)
 
 
 def test_settings_accepts_pat(monkeypatch):
@@ -32,7 +32,7 @@ def test_settings_accepts_pat(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
     from app.config.settings import Settings
-    s = Settings()
+    s = Settings(_env_file=None)
     assert s.TELEGRAM_ALLOWED_USER_ID == 12345
     assert s.DEFAULT_AGENT == "opencode"
 
@@ -42,9 +42,10 @@ def test_default_values(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:fake_token_for_testing_only_not_real")
     monkeypatch.setenv("TELEGRAM_ALLOWED_USER_ID", "99999")
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_" + "B" * 36)
+    monkeypatch.setenv("DEFAULT_AGENT", "opencode")
 
     from app.config.settings import Settings
-    s = Settings()
+    s = Settings(_env_file=None)
     assert s.MAX_AGENT_RUNTIME_MINUTES == 60
     assert s.MAX_FIX_ITERATIONS == 5
     assert s.LOG_LEVEL == "INFO"
