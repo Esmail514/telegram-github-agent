@@ -103,4 +103,6 @@ def test_issue_detail_keyboard():
     issue = _make_mock_issue(123)
     kb = issue_detail_keyboard(issue)
     assert kb.inline_keyboard[0][0].url == issue.html_url
-    assert kb.inline_keyboard[1][0].callback_data == "run_issue:123"
+    assert kb.inline_keyboard[1][0].callback_data == "polish_issue:123"
+    assert kb.inline_keyboard[2][0].callback_data == "run_issue:123"
+

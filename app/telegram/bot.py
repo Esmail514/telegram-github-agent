@@ -26,6 +26,12 @@ from app.telegram.handlers.issues import (
     issues_repo_page_callback,
 )
 from app.telegram.handlers.newissue import build_newissue_handler
+from app.telegram.handlers.polishissue import (
+    polish_apply_callback,
+    polish_issue_start,
+    polish_newissue_start,
+    polish_regen_callback,
+)
 from app.telegram.handlers.repos import (
     repo_page_callback,
     repo_selected_callback,
@@ -43,7 +49,7 @@ from app.telegram.handlers.stop import stop_handler
 logger = logging.getLogger(__name__)
 
 
-async def _error_handler(update: object, context: "CallbackContext") -> None:
+async def _error_handler(update: object, context: CallbackContext) -> None:
     """Global error handler — logs transient network errors quietly."""
     err = context.error
     if isinstance(err, (TimedOut, NetworkError)):
@@ -60,6 +66,7 @@ def build_application(token: str) -> Application:
     The executor and db are injected into bot_data after build.
     """
     from telegram.request import HTTPXRequest
+
     from app.config.settings import settings
 
     req_kwargs: dict = {
@@ -124,6 +131,12 @@ def build_application(token: str) -> Application:
     # Status page: refresh & stop
     app.add_handler(CallbackQueryHandler(status_refresh_callback, pattern="^status:refresh$"))
     app.add_handler(CallbackQueryHandler(stop_job_callback, pattern="^stop_job$"))
+
+    # Polish with AI
+    app.add_handler(CallbackQueryHandler(polish_issue_start, pattern="^polish_issue:\\d+$"))
+    app.add_handler(CallbackQueryHandler(polish_newissue_start, pattern="^polish_newissue$"))
+    app.add_handler(CallbackQueryHandler(polish_apply_callback, pattern="^polish:apply$"))
+    app.add_handler(CallbackQueryHandler(polish_regen_callback, pattern="^polish:regen$"))
 
     logger.info("Telegram Application built with all handlers registered")
     return app

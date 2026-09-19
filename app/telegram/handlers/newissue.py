@@ -21,7 +21,11 @@ from telegram.ext import (
 from app.github.client import github_client
 from app.github.issues import issue_service
 from app.telegram.auth import auth_required
-from app.telegram.keyboards import cancel_keyboard, confirm_issue_keyboard, repos_keyboard
+from app.telegram.keyboards import (
+    cancel_keyboard,
+    polish_newissue_keyboard,
+    repos_keyboard,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +188,7 @@ async def _show_confirm(
     if update.message:
         await update.message.reply_text(
             confirm_text,
-            reply_markup=confirm_issue_keyboard(),
+            reply_markup=polish_newissue_keyboard(),
             parse_mode="Markdown",
         )
     return NI_CONFIRM
