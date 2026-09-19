@@ -294,15 +294,23 @@ async def run_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         except Exception as e:
             logger.warning("Failed to send Telegram notification: %s", e)
 
+    # Determine agent name: confirm_run:<agent>:<issue> or confirm_run:<issue>
+    agent_name = None
+    parts = data.split(":")
+    if len(parts) == 3 and parts[0] == "confirm_run":
+        agent_name = parts[1]
+
     try:
         job = await executor.start_job(
             repo_info=repo_info,
             issue_info=issue_info,
             telegram_chat_id=chat_id,
+            agent_name=agent_name,
             notify_fn=notify,
         )
+        agent_label = f" ({agent_name})" if agent_name else ""
         await query.edit_message_text(
-            f"✅ *Job queued!*\n\n"
+            f"✅ *Job queued!*{agent_label}\n\n"
             f"Job ID: `{job.job_id}`\n"
             f"Repository: `{full_name}`\n"
             f"Issue: #{issue_number}\n\n"

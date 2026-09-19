@@ -58,8 +58,14 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Agent
     # ------------------------------------------------------------------
-    DEFAULT_AGENT: Literal["opencode", "claude", "codex", "gemini"] = Field(
-        "opencode", description="Default AI coding agent"
+    DEFAULT_AGENT: Literal["antigravity", "codex", "claude", "gemini", "opencode"] = Field(
+        "antigravity", description="Default AI coding agent"
+    )
+    ANTIGRAVITY_COMMAND: str = Field(
+        "agy", description="Antigravity CLI executable path or name (e.g. agy or antigravity)"
+    )
+    CODEX_COMMAND: str = Field(
+        "codex", description="Codex executable path or command name"
     )
     OPENCODE_COMMAND: str = Field(
         "opencode", description="opencode executable path or name"

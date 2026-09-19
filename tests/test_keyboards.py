@@ -94,7 +94,8 @@ def test_issues_keyboard_pagination_and_cancel():
 def test_confirm_run_keyboard():
     kb = confirm_run_keyboard("42")
     callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
-    assert "confirm_run:42" in callbacks
+    assert "confirm_run:antigravity:42" in callbacks
+    assert "confirm_run:codex:42" in callbacks
     assert "cancel" in callbacks
 
 

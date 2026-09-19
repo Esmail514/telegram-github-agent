@@ -103,9 +103,17 @@ def confirm_run_keyboard(job_preview_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(
-                "🚀 Start Agent",
-                callback_data=f"{CB_CONFIRM_RUN}{job_preview_id}",
+                "⚡ Run Antigravity (agy)",
+                callback_data=f"confirm_run:antigravity:{job_preview_id}",
             ),
+        ],
+        [
+            InlineKeyboardButton(
+                "🧠 Run Codex (CLI)",
+                callback_data=f"confirm_run:codex:{job_preview_id}",
+            ),
+        ],
+        [
             InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL),
         ]
     ])
