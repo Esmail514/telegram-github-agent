@@ -139,3 +139,13 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("❌ Cancel", callback_data=CB_CANCEL)]
     ])
+
+
+def status_keyboard(is_active: bool = False) -> InlineKeyboardMarkup:
+    """Keyboard shown on the /status page."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if is_active:
+        rows.append([InlineKeyboardButton("🛑 Stop Job", callback_data="stop_job")])
+    rows.append([InlineKeyboardButton("🔄 Refresh", callback_data="status:refresh")])
+    rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="menu:start")])
+    return InlineKeyboardMarkup(rows)

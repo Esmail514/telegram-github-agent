@@ -4,13 +4,18 @@ Telegram bot assembly — registers all handlers and builds the Application.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import (
     Application,
     ApplicationBuilder,
     CallbackQueryHandler,
     CommandHandler,
 )
+
+if TYPE_CHECKING:
+    from telegram.ext import CallbackContext
 
 from app.telegram.handlers.help import help_handler
 from app.telegram.handlers.issues import (
@@ -28,10 +33,25 @@ from app.telegram.handlers.repos import (
 )
 from app.telegram.handlers.run import build_run_handler
 from app.telegram.handlers.start import menu_callback, start_handler
-from app.telegram.handlers.status import status_handler
+from app.telegram.handlers.status import (
+    status_handler,
+    status_refresh_callback,
+    stop_job_callback,
+)
 from app.telegram.handlers.stop import stop_handler
 
 logger = logging.getLogger(__name__)
+
+
+async def _error_handler(update: object, context: "CallbackContext") -> None:
+    """Global error handler — logs transient network errors quietly."""
+    err = context.error
+    if isinstance(err, (TimedOut, NetworkError)):
+        # These are normal when the connection is unstable; log at WARNING, not ERROR
+        logger.warning("Transient Telegram network error (will retry automatically): %s", err)
+        return
+    # Unexpected errors — log with full traceback
+    logger.error("Unhandled exception while processing update", exc_info=context.error)
 
 
 def build_application(token: str) -> Application:
@@ -46,6 +66,7 @@ def build_application(token: str) -> Application:
         "connect_timeout": settings.TELEGRAM_REQUEST_TIMEOUT,
         "read_timeout": settings.TELEGRAM_REQUEST_TIMEOUT,
         "write_timeout": settings.TELEGRAM_REQUEST_TIMEOUT,
+        "connection_pool_size": 8,  # extra connections for concurrent polling + sends
     }
     if settings.TELEGRAM_PROXY_URL:
         req_kwargs["proxy_url"] = settings.TELEGRAM_PROXY_URL
@@ -53,6 +74,9 @@ def build_application(token: str) -> Application:
 
     request = HTTPXRequest(**req_kwargs)
     app = ApplicationBuilder().token(token).request(request).build()
+
+    # Register global error handler
+    app.add_error_handler(_error_handler)
 
     # ------------------------------------------------------------------
     # Conversation handlers (must be registered first — they have priority)
@@ -96,6 +120,10 @@ def build_application(token: str) -> Application:
             pattern="^cancel$",
         )
     )
+
+    # Status page: refresh & stop
+    app.add_handler(CallbackQueryHandler(status_refresh_callback, pattern="^status:refresh$"))
+    app.add_handler(CallbackQueryHandler(stop_job_callback, pattern="^stop_job$"))
 
     logger.info("Telegram Application built with all handlers registered")
     return app

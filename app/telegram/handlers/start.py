@@ -51,3 +51,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     elif data == "menu:status":
         from app.telegram.handlers.status import status_handler
         await status_handler(update, context)
+    elif data == "menu:start":
+        await query.edit_message_text(
+            WELCOME, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
+        )
