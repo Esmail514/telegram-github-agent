@@ -1,0 +1,44 @@
+"""
+/help handler.
+"""
+from __future__ import annotations
+
+from telegram import Update
+from telegram.ext import ContextTypes
+
+from app.telegram.auth import auth_required
+
+HELP_TEXT = """
+🤖 *AI Coding Agent — Help*
+
+*Commands:*
+/start — Show main menu
+/repos — Browse your GitHub repositories
+/issues — Browse issues in a repository
+/newissue — Create a new GitHub issue
+/run — Start the AI agent on an issue
+/status — View current agent job status
+/stop — Stop the running agent
+/help — Show this help
+
+*Typical workflow:*
+1. Use /repos or /issues to find a repository and issue
+2. Use /run to select that issue and launch the agent
+3. Watch progress updates arrive automatically
+4. When done, the bot sends a PR link
+
+*Agent flow:*
+🔍 Inspect → 🛠 Implement → 🧪 Test → 🔧 Fix → 📦 Commit → ⬆️ Push → 🔀 PR
+
+*Safety:*
+• The bot only responds to your Telegram account
+• The agent never pushes to main/master
+• Secrets are scanned before every commit
+• The agent stops after the configured time limit
+"""
+
+
+@auth_required
+async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message
+    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
