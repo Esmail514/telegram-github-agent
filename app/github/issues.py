@@ -97,5 +97,39 @@ class IssueService:
             raise
 
 
+    def update_issue(
+        self,
+        repo_full_name: str,
+        number: int,
+        title: str | None = None,
+        body: str | None = None,
+        labels: list[str] | None = None,
+    ) -> IssueInfo:
+        """
+        Edit an existing GitHub issue.
+
+        Only fields that are not None are updated. To clear labels pass
+        an empty list; to leave them untouched pass None.
+        """
+        try:
+            repo = github_client.get_repo(repo_full_name)
+            issue = repo.get_issue(number=number)
+            kwargs: dict = {}
+            if title is not None:
+                kwargs["title"] = title
+            if body is not None:
+                kwargs["body"] = body
+            if labels is not None:
+                kwargs["labels"] = labels
+            issue.edit(**kwargs)
+            logger.info("Updated issue #%d in %s", number, repo_full_name)
+            return IssueInfo.from_github(issue, repo_full_name)
+        except GithubException as exc:
+            logger.error(
+                "GitHub error updating issue #%d in %s: %s", number, repo_full_name, exc
+            )
+            raise
+
+
 # Module-level singleton
 issue_service = IssueService()
