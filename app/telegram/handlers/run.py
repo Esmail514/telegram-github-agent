@@ -368,6 +368,7 @@ def build_run_handler() -> ConversationHandler:
         ],
         per_user=True,
         per_chat=True,
+        per_message=False,
     )
 
 

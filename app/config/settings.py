@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     TELEGRAM_ALLOWED_USER_ID: int = Field(
         ..., description="Numeric Telegram user ID allowed to control the bot"
     )
+    TELEGRAM_PROXY_URL: str | None = Field(
+        None, description="Optional HTTP/HTTPS/SOCKS5 proxy URL for Telegram (e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080)"
+    )
+    TELEGRAM_REQUEST_TIMEOUT: float = Field(
+        30.0, description="HTTP request timeout for Telegram Bot API (seconds)"
+    )
 
     # ------------------------------------------------------------------
     # GitHub App authentication (preferred)

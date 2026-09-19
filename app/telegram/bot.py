@@ -39,7 +39,20 @@ def build_application(token: str) -> Application:
     Build and return the PTB Application with all handlers registered.
     The executor and db are injected into bot_data after build.
     """
-    app = ApplicationBuilder().token(token).build()
+    from telegram.request import HTTPXRequest
+    from app.config.settings import settings
+
+    req_kwargs: dict = {
+        "connect_timeout": settings.TELEGRAM_REQUEST_TIMEOUT,
+        "read_timeout": settings.TELEGRAM_REQUEST_TIMEOUT,
+        "write_timeout": settings.TELEGRAM_REQUEST_TIMEOUT,
+    }
+    if settings.TELEGRAM_PROXY_URL:
+        req_kwargs["proxy_url"] = settings.TELEGRAM_PROXY_URL
+        logger.info("Using Telegram proxy: %s", settings.TELEGRAM_PROXY_URL)
+
+    request = HTTPXRequest(**req_kwargs)
+    app = ApplicationBuilder().token(token).request(request).build()
 
     # ------------------------------------------------------------------
     # Conversation handlers (must be registered first — they have priority)
