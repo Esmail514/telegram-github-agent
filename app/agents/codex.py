@@ -124,7 +124,7 @@ class CodexAgent(BaseAgent):
             timeout_secs = settings.MAX_AGENT_RUNTIME_MINUTES * 60
             try:
                 await asyncio.wait_for(self._active_proc.wait(), timeout=timeout_secs)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await self.stop()
                 return AgentResult(
                     success=False,
