@@ -4,11 +4,55 @@ All secrets are typed as SecretStr so they are masked in logs and repr().
 """
 from __future__ import annotations
 
+import platform
+import sys
 from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# ---------------------------------------------------------------------------
+# Platform-aware workspace default
+# ---------------------------------------------------------------------------
+
+def _default_workspace_dir() -> Path:
+    """
+    Return a sensible per-OS default for the workspace directory.
+
+    Priority:
+        1. WORKSPACE_DIR env-var (handled by pydantic-settings before this runs)
+        2. Per-OS convention:
+           - Windows  : ~/Documents/telegram-agent-workspaces
+           - macOS    : ~/Documents/telegram-agent-workspaces
+           - Linux    : ~/telegram-agent-workspaces
+           - Other    : ./workspaces  (safe relative fallback)
+    """
+    os_name = platform.system()  # 'Windows', 'Darwin', 'Linux', ''
+    home = Path.home()
+
+    if os_name == "Windows":
+        return home / "Documents" / "telegram-agent-workspaces"
+    elif os_name == "Darwin":  # macOS
+        return home / "Documents" / "telegram-agent-workspaces"
+    elif os_name == "Linux":
+        return home / "telegram-agent-workspaces"
+    else:
+        # FreeBSD, Android-Termux, unknown — safe fallback
+        return Path("./workspaces")
+
+
+def get_platform_info() -> dict[str, str]:
+    """Return a dict of human-readable platform details for status display."""
+    return {
+        "os": platform.system() or "Unknown",
+        "os_version": platform.version(),
+        "os_release": platform.release(),
+        "machine": platform.machine(),
+        "python": sys.version.split()[0],
+        "platform": platform.platform(terse=True),
+    }
 
 
 class Settings(BaseSettings):
@@ -54,11 +98,24 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
-    # Workspace
+    # Workspace & Projects
     # ------------------------------------------------------------------
     WORKSPACE_DIR: Path = Field(
-        Path("./workspaces"),
-        description="Root directory for cloned repositories",
+        default_factory=_default_workspace_dir,
+        description=(
+            "Root directory for cloned repositories. "
+            "Defaults are OS-specific: "
+            "Windows/macOS → ~/Documents/telegram-agent-workspaces, "
+            "Linux → ~/telegram-agent-workspaces."
+        ),
+    )
+    PROJECTS_DIR: Path | None = Field(
+        None,
+        description=(
+            "Root directory containing local projects on this machine "
+            "(e.g. D:\\Work or /home/user/projects). When set, the bot "
+            "scans this directory and lets you browse and run jobs on local projects."
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -70,11 +127,20 @@ class Settings(BaseSettings):
     ANTIGRAVITY_COMMAND: str = Field(
         "agy", description="Antigravity CLI executable path or name (e.g. agy or antigravity)"
     )
+    USE_ANTIGRAVITY_FOR_POLISH: bool = Field(
+        True, description="Whether to use Antigravity to craft and polish issues instead of external LLM APIs"
+    )
     CODEX_COMMAND: str = Field(
         "codex", description="Codex executable path or command name"
     )
     OPENCODE_COMMAND: str = Field(
         "opencode", description="opencode executable path or name"
+    )
+    AUTO_MERGE_PR: bool = Field(
+        False, description="Whether to automatically merge PRs after agent completes successfully"
+    )
+    DEFAULT_MERGE_METHOD: Literal["squash", "merge", "rebase"] = Field(
+        "squash", description="Default PR merge strategy"
     )
 
     # AI provider keys forwarded to agent subprocess
@@ -100,6 +166,27 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Validators
     # ------------------------------------------------------------------
+    @field_validator("WORKSPACE_DIR", mode="before")
+    @classmethod
+    def resolve_workspace_dir(cls, v: object) -> object:
+        """If WORKSPACE_DIR is empty/blank in .env, fall back to the OS default."""
+        if isinstance(v, str) and not v.strip():
+            return _default_workspace_dir()
+        return v
+
+    @field_validator("PROJECTS_DIR", mode="before")
+    @classmethod
+    def resolve_projects_dir(cls, v: object) -> Path | None:
+        """If PROJECTS_DIR is empty/blank, treat as None."""
+        if isinstance(v, str):
+            v_str = v.strip().strip('"').strip("'")
+            if not v_str:
+                return None
+            return Path(v_str).resolve()
+        if isinstance(v, Path):
+            return v.resolve()
+        return None
+
     @field_validator(
         "GITHUB_APP_ID",
         "GITHUB_INSTALLATION_ID",
@@ -151,6 +238,15 @@ class Settings(BaseSettings):
                 self.GOOGLE_GENERATIVEAI_API_KEY.get_secret_value()
             )
         return env
+
+    def set_projects_dir(self, new_path: Path | str | None) -> Path | None:
+        """Update active PROJECTS_DIR at runtime."""
+        if new_path is None:
+            self.PROJECTS_DIR = None
+            return None
+        p = Path(str(new_path).strip().strip('"').strip("'")).resolve()
+        self.PROJECTS_DIR = p
+        return p
 
 
 

@@ -13,8 +13,11 @@ HELP_TEXT = """
 
 *Commands:*
 /start — Show main menu
+/projects — Browse local projects on your computer
+/setdir — View or change local projects root directory
 /repos — Browse your GitHub repositories
 /issues — Browse issues in a repository
+/prs — Browse and merge Pull Requests
 /newissue — Create a new GitHub issue
 /run — Start the AI agent on an issue
 /status — View current agent job status

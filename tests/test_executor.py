@@ -90,3 +90,46 @@ async def test_stop_active_job(temp_db: Database):
         # After stopping, no job should be active
         active = await executor.get_active_job()
         assert active is None
+
+
+@pytest.mark.asyncio
+async def test_executor_send_notification():
+    notifications = []
+
+    async def mock_notify(msg, reply_markup=None):
+        notifications.append((msg, reply_markup))
+
+    await JobExecutor._send_notification(mock_notify, "Hello", reply_markup={"test": True})
+    assert len(notifications) == 1
+    assert notifications[0][0] == "Hello"
+    assert notifications[0][1] == {"test": True}
+
+    # Test single-arg notify backwards compatibility
+    single_arg_notifications = []
+
+    async def single_notify(msg):
+        single_arg_notifications.append(msg)
+
+    await JobExecutor._send_notification(single_notify, "World", reply_markup={"test": True})
+    assert len(single_arg_notifications) == 1
+    assert single_arg_notifications[0] == "World"
+
+
+@pytest.mark.asyncio
+async def test_start_job_with_local_workspace_path(temp_db: Database):
+    executor = JobExecutor(temp_db)
+    local_path = Path("D:/MyProjects/Demo")
+
+    with patch.object(executor, "_run_job", new_callable=AsyncMock) as mock_run:
+        job = await executor.start_job(
+            repo_info=_mock_repo(),
+            issue_info=_mock_issue(1),
+            telegram_chat_id=123,
+            local_workspace_path=local_path,
+        )
+        assert job.job_id is not None
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("local_workspace_path") == local_path
+
+

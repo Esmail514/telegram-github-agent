@@ -91,7 +91,7 @@ async def polish_issue_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     await query.edit_message_text(
-        f"🤖 *Polishing issue #{issue_number} with AI…*\n\n"
+        f"🤖 *Polishing issue #{issue_number} with Antigravity…*\n\n"
         f"_(This may take a few seconds)_",
         parse_mode="Markdown",
     )
@@ -133,7 +133,7 @@ async def polish_newissue_start(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data[_KEY_ISSUE_NUM] = None
 
     await query.edit_message_text(
-        "🤖 *Polishing your draft issue with AI…*\n\n_(This may take a few seconds)_",
+        "🤖 *Polishing your draft issue with Antigravity…*\n\n_(This may take a few seconds)_",
         parse_mode="Markdown",
     )
 
@@ -197,7 +197,7 @@ async def _run_polish(
 
     issue_ref = f"issue #{issue_number}" if issue_number else "draft issue"
     text = (
-        f"✨ *AI-Polished {issue_ref}*\n\n"
+        f"✨ *Antigravity-Polished {issue_ref}*\n\n"
         f"*Title:* {polished.title}\n\n"
         f"*Labels:* {labels_str}\n\n"
         f"*Description:*\n{body_preview}\n\n"
@@ -251,7 +251,7 @@ async def polish_apply_callback(update: Update, context: ContextTypes.DEFAULT_TY
             context.user_data["ni_body"] = body
             context.user_data["ni_labels"] = labels
         await query.edit_message_text(
-            "✅ *Draft updated with AI improvements!*\n\n"
+            "✅ *Draft updated with Antigravity improvements!*\n\n"
             f"*Title:* {title}\n\n"
             "The polished content has been applied to your draft. "
             "Use /newissue to continue and create the issue.",
@@ -313,7 +313,7 @@ async def polish_regen_callback(update: Update, context: ContextTypes.DEFAULT_TY
     source = ud.get(_KEY_SOURCE, "existing")
 
     await query.edit_message_text(
-        "🔄 *Regenerating with AI…*\n\n_(This may take a few seconds)_",
+        "🔄 *Regenerating with Antigravity…*\n\n_(This may take a few seconds)_",
         parse_mode="Markdown",
     )
 

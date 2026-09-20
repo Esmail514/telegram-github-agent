@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import Any
 
 from app.agents.manager import agent_manager
 from app.config.settings import settings
@@ -28,10 +30,11 @@ from app.runner.jobs import (
     make_pr_title,
 )
 from app.runner.workspace import WorkspaceManager
+from app.telegram.keyboards import pr_action_keyboard
 
 logger = logging.getLogger(__name__)
 
-NotifyFn = Callable[[str], Awaitable[None]]
+NotifyFn = Callable[..., Awaitable[None]]
 
 
 class JobExecutor:
@@ -61,11 +64,16 @@ class JobExecutor:
         issue_info: IssueInfo,
         telegram_chat_id: int,
         agent_name: str | None = None,
+        local_workspace_path: Path | None = None,
         notify_fn: NotifyFn | None = None,
     ) -> Job:
         """
         Queue and start a new job.
         Raises RuntimeError if another job is already active.
+
+        Args:
+            local_workspace_path: If provided, skip cloning and use this
+                                  existing local directory as the workspace.
         """
         active = await self._repo.get_active_job()
         if active:
@@ -92,7 +100,10 @@ class JobExecutor:
 
         # Launch the execution loop as a background task
         self._active_task = asyncio.create_task(
-            self._run_job(job_id, repo_info, issue_info, agent_name, notify),
+            self._run_job(
+                job_id, repo_info, issue_info, agent_name, notify,
+                local_workspace_path=local_workspace_path,
+            ),
             name=f"job-{job_id}",
         )
         self._active_task.add_done_callback(self._on_task_done)
@@ -136,6 +147,7 @@ class JobExecutor:
         issue_info: IssueInfo,
         agent_name: str,
         notify: NotifyFn,
+        local_workspace_path: Path | None = None,
     ) -> None:
         """Full end-to-end job execution pipeline."""
         repo = self._repo
@@ -146,30 +158,48 @@ class JobExecutor:
                 await repo.update_job(job_id, **kwargs)
 
         owner, repo_name = repo_info.full_name.split("/", 1)
+        branch = make_branch_name(issue_info.number)
 
         try:
-            # --- Phase: CLONING ------------------------------------------
-            await update(JobStatus.CLONING, "Cloning repository")
-            await notify(
-                f"🚀 Agent started\n\n"
-                f"Repository: {repo_info.full_name}\n"
-                f"Issue: #{issue_info.number}\n"
-                f"Branch: {make_branch_name(issue_info.number)}"
-            )
+            if local_workspace_path is not None:
+                # -------------------------------------------------------
+                # LOCAL PATH MODE: skip clone, use the provided directory
+                # -------------------------------------------------------
+                workspace_path = local_workspace_path
+                await update(JobStatus.CLONING, "Using local path")
+                await notify(
+                    f"🚀 Agent started (local workspace)\n\n"
+                    f"Repository: {repo_info.full_name}\n"
+                    f"Issue: #{issue_info.number}\n"
+                    f"Branch: {branch}\n"
+                    f"Workspace: `{workspace_path}`"
+                )
+                # Configure git identity and create branch in the local repo
+                await git_service.configure_identity(
+                    workspace_path, "AI Agent", "ai-agent@noreply.local"
+                )
+                await git_service.create_branch(workspace_path, branch)
+            else:
+                # -------------------------------------------------------
+                # CLONE MODE: clone or pull, then create branch
+                # -------------------------------------------------------
+                await update(JobStatus.CLONING, "Cloning repository")
+                await notify(
+                    f"🚀 Agent started\n\n"
+                    f"Repository: {repo_info.full_name}\n"
+                    f"Issue: #{issue_info.number}\n"
+                    f"Branch: {branch}"
+                )
 
-            workspace_path = await self._workspace.clone_or_update(
-                clone_url=repo_info.clone_url,
-                owner=owner,
-                repo=repo_name,
-            )
-
-            # Configure git identity (needed for commits)
-            await git_service.configure_identity(
-                workspace_path, "AI Agent", "ai-agent@noreply.local"
-            )
-
-            branch = make_branch_name(issue_info.number)
-            await git_service.create_branch(workspace_path, branch)
+                workspace_path = await self._workspace.clone_or_update(
+                    clone_url=repo_info.clone_url,
+                    owner=owner,
+                    repo=repo_name,
+                )
+                await git_service.configure_identity(
+                    workspace_path, "AI Agent", "ai-agent@noreply.local"
+                )
+                await git_service.create_branch(workspace_path, branch)
 
             # --- Phase: INSPECTING ----------------------------------------
             await update(JobStatus.INSPECTING, "Inspecting repository")
@@ -286,16 +316,56 @@ class JobExecutor:
                 pr_number=pr.number,
                 files_changed=len(changed_files),
             )
+
+            # Check if auto-merge is enabled
+            if getattr(settings, "AUTO_MERGE_PR", False):
+                await update("MERGING_PR", "Merging Pull Request")
+                await notify("🔀 Auto-merging Pull Request...")
+                merge_method = getattr(settings, "DEFAULT_MERGE_METHOD", "squash")
+                merge_result = pr_service.merge_pr(
+                    repo_full_name=repo_info.full_name,
+                    number=pr.number,
+                    commit_title=f"Merge PR #{pr.number}: {pr_title}",
+                    merge_method=merge_method,
+                )
+                if merge_result.merged:
+                    await update(JobStatus.COMPLETED, "Completed & Merged")
+                    sha_str = f" (`{merge_result.sha[:7]}`)" if merge_result.sha else ""
+                    await self._send_notification(
+                        notify,
+                        f"🎉 Agent completed & PR merged successfully!{sha_str}\n\n"
+                        f"Repository: {repo_info.full_name}\n"
+                        f"Issue: #{issue_info.number}\n"
+                        f"Branch: {branch}\n"
+                        f"Files changed: {len(changed_files)}\n"
+                        f"Pull Request: #{pr.number} (Merged via {merge_method})\n\n"
+                        f"[Open Pull Request]({pr.html_url})",
+                    )
+                    return
+                else:
+                    logger.warning(
+                        "Auto-merge failed for PR #%d in %s: %s",
+                        pr.number, repo_info.full_name, merge_result.message,
+                    )
+
             await update(JobStatus.COMPLETED, "Completed")
 
-            await notify(
+            keyboard = pr_action_keyboard(
+                pr_url=pr.html_url,
+                repo_full_name=repo_info.full_name,
+                pr_number=pr.number,
+            )
+
+            await self._send_notification(
+                notify,
                 f"🎉 Agent completed successfully!\n\n"
                 f"Repository: {repo_info.full_name}\n"
                 f"Issue: #{issue_info.number}\n"
                 f"Branch: {branch}\n"
                 f"Files changed: {len(changed_files)}\n"
                 f"Pull Request: #{pr.number}\n\n"
-                f"[Open Pull Request]({pr.html_url})"
+                f"[Open Pull Request]({pr.html_url})",
+                reply_markup=keyboard,
             )
 
         except asyncio.CancelledError:
@@ -325,5 +395,21 @@ class JobExecutor:
             logger.error("Job task raised: %s", task.exception())
 
     @staticmethod
-    async def _noop_notify(msg: str) -> None:
+    async def _noop_notify(msg: str, *args: Any, **kwargs: Any) -> None:
         logger.info("[notify] %s", msg)
+
+    @staticmethod
+    async def _send_notification(notify: NotifyFn, msg: str, reply_markup: Any = None) -> None:
+        import inspect
+        try:
+            sig = inspect.signature(notify)
+            if len(sig.parameters) >= 2 or any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
+                await notify(msg, reply_markup=reply_markup)  # type: ignore[call-arg]
+            else:
+                await notify(msg)
+        except Exception as exc:
+            logger.warning("Failed to deliver notification with markup: %s, falling back", exc)
+            try:
+                await notify(msg)
+            except Exception:
+                pass

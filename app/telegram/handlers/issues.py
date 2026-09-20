@@ -11,12 +11,14 @@ from telegram.ext import ContextTypes
 
 from app.github.client import github_client
 from app.github.issues import issue_service
+from app.runner.project_scanner import project_scanner
 from app.telegram.auth import auth_required
 from app.telegram.keyboards import (
     CB_ISSUE,
     CB_ISSUE_PAGE,
     issue_detail_keyboard,
     issues_keyboard,
+    projects_keyboard,
     repos_keyboard,
 )
 
@@ -27,9 +29,93 @@ _ISSUES_PER_PAGE = 10
 
 @auth_required
 async def issues_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    projects = project_scanner.scan()
+    if projects:
+        await show_project_select_for_issues(update, context, page=0)
+        return
     assert update.message
     await update.message.reply_text("⏳ Fetching repositories...")
     await show_repo_select_for_issues(update, context)
+
+
+async def show_project_select_for_issues(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0
+) -> None:
+    projects = project_scanner.scan()
+    if not projects:
+        await show_repo_select_for_issues(update, context, page=page)
+        return
+
+    if context.user_data is not None:
+        context.user_data["issues_scanned_projects"] = projects
+
+    keyboard = projects_keyboard(
+        projects,
+        page=page,
+        callback_prefix="issues_proj:",
+        page_prefix="issues_proj_page:",
+        include_cancel=True,
+        include_setdir=False,
+    )
+    from telegram import InlineKeyboardButton
+    keyboard.inline_keyboard.insert(-1, [
+        InlineKeyboardButton("🌐 Browse All GitHub Repos", callback_data="issues_browse_github")
+    ])
+
+    text = f"📋 *Browse Issues — Select Project* (page {page + 1})\n\nChoose a project to view its issues:"
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    elif update.message:
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+
+@auth_required
+async def issues_proj_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    assert query
+    await query.answer()
+    page = int((query.data or "").replace("issues_proj_page:", ""))
+    await show_project_select_for_issues(update, context, page=page)
+
+
+@auth_required
+async def issues_proj_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    assert query
+    await query.answer()
+
+    raw_val = (query.data or "").replace("issues_proj:", "")
+    projects = (context.user_data or {}).get("issues_scanned_projects") or project_scanner.scan()
+
+    project = None
+    if raw_val.isdigit():
+        idx = int(raw_val)
+        if 0 <= idx < len(projects):
+            project = projects[idx]
+    if not project:
+        project = project_scanner.get_project_by_name(raw_val)
+
+    if not project or not project.repo_full_name:
+        await query.edit_message_text(
+            f"⚠️ Project `{project.name if project else raw_val}` has no GitHub repository linked.\n"
+            f"Cannot fetch issues for this folder.",
+            parse_mode="Markdown"
+        )
+        return
+
+    if context.user_data is not None:
+        context.user_data["selected_repo"] = project.repo_full_name
+        context.user_data["issues_page"] = 0
+
+    await _show_issues(update, context, project.repo_full_name, page=0)
+
+
+@auth_required
+async def issues_browse_github_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    assert query
+    await query.answer()
+    await show_repo_select_for_issues(update, context, page=0)
 
 
 async def show_repo_select_for_issues(

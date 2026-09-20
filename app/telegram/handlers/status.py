@@ -13,6 +13,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from app.config.settings import get_platform_info, settings
 from app.database.repository import JobStatus
 from app.telegram.auth import auth_required
 from app.telegram.keyboards import status_keyboard
@@ -195,3 +196,36 @@ async def stop_job_callback(
         await query.edit_message_text(
             "🛑 Job stopped.", reply_markup=status_keyboard(is_active=False)
         )
+
+
+@auth_required
+async def sysinfo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /sysinfo — display platform details and workspace path."""
+    assert update.message
+
+    info = get_platform_info()
+    workspace = settings.WORKSPACE_DIR.resolve()
+    workspace_exists = workspace.exists()
+    workspace_icon = "✅" if workspace_exists else "⚠️"
+
+    # Map OS name to a friendly emoji
+    os_emoji = {
+        "Windows": "🪟",
+        "Darwin": "🍎",
+        "Linux": "🐧",
+    }.get(info["os"], "💻")
+
+    text = (
+        f"{os_emoji} *System Information*\n\n"
+        f"*OS:* `{info['os']} {info['os_release']}`\n"
+        f"*Platform:* `{info['platform']}`\n"
+        f"*Machine:* `{info['machine']}`\n"
+        f"*Python:* `{info['python']}`\n"
+        f"\n"
+        f"📂 *Workspace Directory*\n"
+        f"{workspace_icon} `{workspace}`\n"
+        f"*Exists:* {'Yes' if workspace_exists else 'No — will be created on first run'}\n"
+        f"\n"
+        f"💡 _Override with_ `WORKSPACE_DIR=<path>` _in your_ `.env`"
+    )
+    await update.message.reply_text(text, parse_mode="Markdown")

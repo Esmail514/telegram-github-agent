@@ -44,12 +44,25 @@ class AntigravityAgent(BaseAgent):
 
         cmd_name = settings.ANTIGRAVITY_COMMAND
 
-        # Verify if command is available on PATH
+        # Verify if command is available on PATH or standard install paths
         cmd_path = shutil.which(cmd_name)
-        if not cmd_path and shutil.which("antigravity"):
-            cmd_path = shutil.which("antigravity")
-        elif not cmd_path and shutil.which("agy"):
-            cmd_path = shutil.which("agy")
+        if not cmd_path:
+            for candidate in ("antigravity", "agy", "antigravity-ide"):
+                resolved = shutil.which(candidate)
+                if resolved:
+                    cmd_path = resolved
+                    break
+
+        if not cmd_path:
+            ide_cmd = (
+                Path(os.environ.get("LOCALAPPDATA", ""))
+                / "Programs"
+                / "Antigravity IDE"
+                / "bin"
+                / "antigravity-ide.cmd"
+            )
+            if ide_cmd.exists():
+                cmd_path = str(ide_cmd)
 
         prompt = self.build_prompt(context)
         prompt_file = workspace_path / ".antigravity_task.md"

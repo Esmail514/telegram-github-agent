@@ -21,8 +21,11 @@ from app.telegram.handlers.help import help_handler
 from app.telegram.handlers.issues import (
     issue_page_callback,
     issue_selected_callback,
+    issues_browse_github_callback,
     issues_for_repo_callback,
     issues_handler,
+    issues_proj_page_callback,
+    issues_proj_selected_callback,
     issues_repo_page_callback,
 )
 from app.telegram.handlers.newissue import build_newissue_handler
@@ -31,6 +34,26 @@ from app.telegram.handlers.polishissue import (
     polish_issue_start,
     polish_newissue_start,
     polish_regen_callback,
+)
+from app.telegram.handlers.projects import (
+    build_setdir_handler,
+    project_page_callback,
+    project_refresh_callback,
+    project_selected_callback,
+    projects_handler,
+    setdir_command,
+)
+from app.telegram.handlers.prs import (
+    merge_pr_execute_callback,
+    merge_pr_start_callback,
+    pr_page_callback,
+    pr_selected_callback,
+    prs_browse_github_callback,
+    prs_for_repo_callback,
+    prs_handler,
+    prs_proj_page_callback,
+    prs_proj_selected_callback,
+    prs_repo_page_callback,
 )
 from app.telegram.handlers.repos import (
     repo_page_callback,
@@ -43,6 +66,7 @@ from app.telegram.handlers.status import (
     status_handler,
     status_refresh_callback,
     stop_job_callback,
+    sysinfo_handler,
 )
 from app.telegram.handlers.stop import stop_handler
 
@@ -88,6 +112,7 @@ def build_application(token: str) -> Application:
     # ------------------------------------------------------------------
     # Conversation handlers (must be registered first — they have priority)
     # ------------------------------------------------------------------
+    app.add_handler(build_setdir_handler())
     app.add_handler(build_newissue_handler())
     app.add_handler(build_run_handler())
 
@@ -95,11 +120,15 @@ def build_application(token: str) -> Application:
     # Command handlers
     # ------------------------------------------------------------------
     app.add_handler(CommandHandler("start", start_handler))
+    app.add_handler(CommandHandler("projects", projects_handler))
+    app.add_handler(CommandHandler("setdir", setdir_command))
     app.add_handler(CommandHandler("repos", repos_handler))
     app.add_handler(CommandHandler("issues", issues_handler))
+    app.add_handler(CommandHandler("prs", prs_handler))
     app.add_handler(CommandHandler("status", status_handler))
     app.add_handler(CommandHandler("stop", stop_handler))
     app.add_handler(CommandHandler("help", help_handler))
+    app.add_handler(CommandHandler("sysinfo", sysinfo_handler))
 
     # ------------------------------------------------------------------
     # Callback query handlers (inline keyboard buttons)
@@ -108,11 +137,19 @@ def build_application(token: str) -> Application:
     # Main menu buttons
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu:"))
 
+    # Local Projects
+    app.add_handler(CallbackQueryHandler(project_page_callback, pattern="^proj_page:"))
+    app.add_handler(CallbackQueryHandler(project_refresh_callback, pattern="^proj_refresh$"))
+    app.add_handler(CallbackQueryHandler(project_selected_callback, pattern="^proj:\\d+$"))
+
     # Repos
     app.add_handler(CallbackQueryHandler(repo_page_callback, pattern="^repo_page:"))
     app.add_handler(CallbackQueryHandler(repo_selected_callback, pattern="^repo:"))
 
     # Issues
+    app.add_handler(CallbackQueryHandler(issues_proj_page_callback, pattern="^issues_proj_page:"))
+    app.add_handler(CallbackQueryHandler(issues_proj_selected_callback, pattern="^issues_proj:"))
+    app.add_handler(CallbackQueryHandler(issues_browse_github_callback, pattern="^issues_browse_github$"))
     app.add_handler(CallbackQueryHandler(issues_repo_page_callback, pattern="^issues_repo_page:"))
     app.add_handler(CallbackQueryHandler(issues_for_repo_callback, pattern="^issues_for:"))
     app.add_handler(CallbackQueryHandler(issue_page_callback, pattern="^issue_page:"))
@@ -137,6 +174,17 @@ def build_application(token: str) -> Application:
     app.add_handler(CallbackQueryHandler(polish_newissue_start, pattern="^polish_newissue$"))
     app.add_handler(CallbackQueryHandler(polish_apply_callback, pattern="^polish:apply$"))
     app.add_handler(CallbackQueryHandler(polish_regen_callback, pattern="^polish:regen$"))
+
+    # Pull Requests & Merging
+    app.add_handler(CallbackQueryHandler(prs_proj_page_callback, pattern="^prs_proj_page:"))
+    app.add_handler(CallbackQueryHandler(prs_proj_selected_callback, pattern="^prs_proj:"))
+    app.add_handler(CallbackQueryHandler(prs_browse_github_callback, pattern="^prs_browse_github$"))
+    app.add_handler(CallbackQueryHandler(prs_repo_page_callback, pattern="^prs_repo_page:"))
+    app.add_handler(CallbackQueryHandler(prs_for_repo_callback, pattern="^prs_for:"))
+    app.add_handler(CallbackQueryHandler(pr_page_callback, pattern="^pr_page:"))
+    app.add_handler(CallbackQueryHandler(pr_selected_callback, pattern="^pr:\\d+$"))
+    app.add_handler(CallbackQueryHandler(merge_pr_start_callback, pattern="^merge_pr:"))
+    app.add_handler(CallbackQueryHandler(merge_pr_execute_callback, pattern="^do_merge:"))
 
     logger.info("Telegram Application built with all handlers registered")
     return app

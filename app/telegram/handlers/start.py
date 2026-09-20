@@ -36,15 +36,21 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     data = query.data or ""
 
-    if data == "menu:repos":
+    if data == "menu:projects":
+        from app.telegram.handlers.projects import show_projects
+        await show_projects(update, context)
+    elif data == "menu:repos":
         from app.telegram.handlers.repos import show_repos
         await show_repos(update, context)
     elif data == "menu:issues":
-        from app.telegram.handlers.issues import show_repo_select_for_issues
-        await show_repo_select_for_issues(update, context)
+        from app.telegram.handlers.issues import issues_handler
+        await issues_handler(update, context)
+    elif data == "menu:prs":
+        from app.telegram.handlers.prs import prs_handler
+        await prs_handler(update, context)
     elif data == "menu:run":
-        from app.telegram.handlers.run import show_repo_select_for_run
-        await show_repo_select_for_run(update, context)
+        from app.telegram.handlers.run import show_run_start
+        await show_run_start(update, context)
     elif data == "menu:newissue":
         from app.telegram.handlers.newissue import start_newissue_flow
         await start_newissue_flow(update, context)
