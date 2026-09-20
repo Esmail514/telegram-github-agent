@@ -7,7 +7,6 @@ from app.github.client import RepoInfo
 from app.github.issues import IssueInfo
 from app.runner.project_scanner import LocalProject
 from app.telegram.keyboards import (
-    CB_PROJECT,
     CB_SETDIR,
     CB_WS_CLONE,
     CB_WS_LOCAL,

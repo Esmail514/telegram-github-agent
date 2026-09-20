@@ -6,10 +6,8 @@ from pathlib import Path
 
 from app.config.settings import settings
 from app.runner.project_scanner import (
-    LocalProject,
     ProjectScanner,
     parse_github_repo_from_url,
-    project_scanner,
 )
 
 

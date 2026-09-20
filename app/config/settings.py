@@ -12,7 +12,6 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 # ---------------------------------------------------------------------------
 # Platform-aware workspace default
 # ---------------------------------------------------------------------------

@@ -206,9 +206,9 @@ class IssuePolisher:
         )
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=30)
-        except TimeoutError:
+        except TimeoutError as err:
             proc.kill()
-            raise TimeoutError("Antigravity CLI timed out while polishing issue.")
+            raise TimeoutError("Antigravity CLI timed out while polishing issue.") from err
 
         out = stdout_bytes.decode(errors="replace").strip()
         if "{" in out and "}" in out:
@@ -523,7 +523,7 @@ class IssuePolisher:
         data: dict = {}
         try:
             data = json.loads(text)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as err:
             # Look for inner JSON block { ... }
             start = text.find("{")
             end = text.rfind("}")
@@ -535,7 +535,7 @@ class IssuePolisher:
                     raise ValueError(f"AI returned invalid JSON: {exc}") from exc
             else:
                 logger.error("Failed to parse AI response as JSON: %s", raw[:500])
-                raise ValueError("Response does not contain a valid JSON object")
+                raise ValueError("Response does not contain a valid JSON object") from err
 
         return PolishedIssue(
             title=str(data.get("title", "")).strip(),

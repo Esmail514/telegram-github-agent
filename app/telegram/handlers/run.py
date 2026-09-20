@@ -20,7 +20,6 @@ from telegram.ext import (
     filters,
 )
 
-from app.config.settings import settings
 from app.github.client import github_client
 from app.github.issues import issue_service
 from app.runner.jobs import make_branch_name
@@ -28,8 +27,6 @@ from app.runner.project_scanner import project_scanner
 from app.telegram.auth import auth_required
 from app.telegram.keyboards import (
     CB_ISSUE,
-    CB_WS_CLONE,
-    CB_WS_LOCAL,
     cancel_keyboard,
     confirm_run_keyboard,
     issues_keyboard,
@@ -441,7 +438,7 @@ async def _show_confirm(
     ws_line = (
         f"*Workspace:* `{local_path}`  📁 Local"
         if local_path
-        else f"*Workspace:* Clone from GitHub  ⬇️"
+        else "*Workspace:* Clone from GitHub  ⬇️"
     )
 
     text = (
@@ -476,7 +473,7 @@ async def _show_confirm_from_message(
     ws_line = (
         f"*Workspace:* `{local_path}`  📁 Local"
         if local_path
-        else f"*Workspace:* Clone from GitHub  ⬇️"
+        else "*Workspace:* Clone from GitHub  ⬇️"
     )
 
     text = (
