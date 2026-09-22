@@ -72,6 +72,16 @@ async def _async_main() -> None:
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)  # type: ignore[union-attr]
 
+    # ---- Start background job scheduler --------------------------------
+    from app.runner.scheduler import job_scheduler
+    scheduler_context = {
+        "db": db,
+        "executor": executor,
+        "bot": app.bot,
+    }
+    job_scheduler.start(scheduler_context)
+    logger.info("Background job scheduler started")
+
     logger.info("Bot is running. Press Ctrl+C to stop.")
 
     try:
@@ -81,6 +91,7 @@ async def _async_main() -> None:
         logger.info("Shutdown signal received")
     finally:
         logger.info("Shutting down...")
+        job_scheduler.stop()
         await app.updater.stop()  # type: ignore[union-attr]
         await app.stop()
         await app.shutdown()

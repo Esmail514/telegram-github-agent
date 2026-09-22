@@ -2,6 +2,8 @@
 SQLite DDL for all application tables.
 """
 
+from app.database.schedule_models import SCHEDULED_JOBS_TABLE, CREATE_SCHEDULED_INDEX
+
 JOBS_TABLE = """
 CREATE TABLE IF NOT EXISTS jobs (
     job_id          TEXT PRIMARY KEY,
@@ -37,4 +39,4 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status
     ON jobs (status, created_at);
 """
 
-ALL_DDL = [JOBS_TABLE, SESSIONS_TABLE, CREATE_JOBS_INDEX]
+ALL_DDL = [JOBS_TABLE, SESSIONS_TABLE, CREATE_JOBS_INDEX, SCHEDULED_JOBS_TABLE, CREATE_SCHEDULED_INDEX]

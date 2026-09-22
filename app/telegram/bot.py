@@ -61,6 +61,11 @@ from app.telegram.handlers.repos import (
     repos_handler,
 )
 from app.telegram.handlers.run import build_run_handler
+from app.telegram.handlers.schedule import (
+    build_schedule_handler,
+    schedule_list_command,
+    sched_delete_callback,
+)
 from app.telegram.handlers.start import menu_callback, start_handler
 from app.telegram.handlers.status import (
     status_handler,
@@ -115,6 +120,7 @@ def build_application(token: str) -> Application:
     app.add_handler(build_setdir_handler())
     app.add_handler(build_newissue_handler())
     app.add_handler(build_run_handler())
+    app.add_handler(build_schedule_handler())
 
     # ------------------------------------------------------------------
     # Command handlers
@@ -129,6 +135,7 @@ def build_application(token: str) -> Application:
     app.add_handler(CommandHandler("stop", stop_handler))
     app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("sysinfo", sysinfo_handler))
+    app.add_handler(CommandHandler("scheduled", schedule_list_command))
 
     # ------------------------------------------------------------------
     # Callback query handlers (inline keyboard buttons)
@@ -185,6 +192,11 @@ def build_application(token: str) -> Application:
     app.add_handler(CallbackQueryHandler(pr_selected_callback, pattern="^pr:\\d+$"))
     app.add_handler(CallbackQueryHandler(merge_pr_start_callback, pattern="^merge_pr:"))
     app.add_handler(CallbackQueryHandler(merge_pr_execute_callback, pattern="^do_merge:"))
+
+    # Schedule: delete a pending job
+    app.add_handler(CallbackQueryHandler(sched_delete_callback, pattern="^sched_del:\\d+$"))
+    # Schedule: noop for info-only buttons
+    app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer(), pattern="^sched_noop:"))
 
     logger.info("Telegram Application built with all handlers registered")
     return app

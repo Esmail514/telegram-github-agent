@@ -48,5 +48,7 @@ def test_default_values(monkeypatch):
     s = Settings(_env_file=None)
     assert s.MAX_AGENT_RUNTIME_MINUTES == 60
     assert s.MAX_FIX_ITERATIONS == 5
+    assert s.GIT_OPERATION_TIMEOUT_SECONDS == 120.0
+    assert s.GIT_NETWORK_TIMEOUT_SECONDS == 600.0
     assert s.LOG_LEVEL == "INFO"
     assert s.OPENCODE_COMMAND == "opencode"

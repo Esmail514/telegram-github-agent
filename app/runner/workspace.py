@@ -61,26 +61,52 @@ class WorkspaceManager:
         return repo_path
 
     async def _git_clone(self, url: str, dest: Path) -> None:
-        """Run git clone."""
+        """Run git clone with timeout."""
+        timeout_sec = settings.GIT_NETWORK_TIMEOUT_SECONDS
         proc = await asyncio.create_subprocess_exec(
             "git", "clone", "--depth=1", url, str(dest),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout_sec
+            )
+        except TimeoutError:
+            try:
+                proc.kill()
+                await proc.wait()
+            except ProcessLookupError:
+                pass
+            logger.error("git clone timed out after %ss: %s", timeout_sec, url)
+            raise TimeoutError(f"git clone timed out after {timeout_sec}s for {url}")
+
         if proc.returncode != 0:
             err = stderr.decode(errors="replace")
             raise RuntimeError(f"git clone failed (rc={proc.returncode}): {err[:500]}")
         logger.info("Cloned into %s", dest)
 
     async def _git_pull(self, repo_path: Path) -> None:
-        """Run git pull --ff-only."""
+        """Run git pull --ff-only with timeout."""
+        timeout_sec = settings.GIT_NETWORK_TIMEOUT_SECONDS
         proc = await asyncio.create_subprocess_exec(
             "git", "-C", str(repo_path), "pull", "--ff-only",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout_sec
+            )
+        except TimeoutError:
+            try:
+                proc.kill()
+                await proc.wait()
+            except ProcessLookupError:
+                pass
+            logger.warning("git pull timed out after %ss in %s", timeout_sec, repo_path)
+            return
+
         if proc.returncode != 0:
             # Don't fail hard on pull errors — the workspace is usable
             err = stderr.decode(errors="replace")

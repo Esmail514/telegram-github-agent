@@ -75,7 +75,7 @@ class Settings(BaseSettings):
         None, description="Optional HTTP/HTTPS/SOCKS5 proxy URL for Telegram (e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080)"
     )
     TELEGRAM_REQUEST_TIMEOUT: float = Field(
-        30.0, description="HTTP request timeout for Telegram Bot API (seconds)"
+        60.0, description="HTTP request timeout for Telegram Bot API (seconds)"
     )
 
     # ------------------------------------------------------------------
@@ -155,6 +155,12 @@ class Settings(BaseSettings):
     )
     MAX_FIX_ITERATIONS: int = Field(
         5, ge=1, le=20, description="Max fix attempts before giving up"
+    )
+    GIT_OPERATION_TIMEOUT_SECONDS: float = Field(
+        120.0, ge=5.0, le=600.0, description="Timeout for local git operations (seconds)"
+    )
+    GIT_NETWORK_TIMEOUT_SECONDS: float = Field(
+        600.0, ge=10.0, le=1800.0, description="Timeout for network git operations like clone, fetch, pull, push (seconds)"
     )
 
     # ------------------------------------------------------------------

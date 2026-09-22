@@ -372,6 +372,19 @@ class JobExecutor:
             logger.info("Job %s cancelled", job_id)
             raise
 
+        except TimeoutError as exc:
+            logger.error("Job %s timed out during operation: %s", job_id, exc)
+            error_str = f"Operation timed out: {exc}"
+            try:
+                await repo.update_job(job_id, error=error_str[:500])
+                await repo.set_status(job_id, JobStatus.FAILED, phase="Timed out")
+                await notify(
+                    f"⏰ Operation timed out to protect resources:\n\n"
+                    f"`{error_str[:250]}`"
+                )
+            except Exception:
+                pass
+
         except Exception as exc:
             logger.exception("Job %s failed with unexpected error: %s", job_id, exc)
             error_str = str(exc)[:500]

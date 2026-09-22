@@ -20,6 +20,8 @@ HELP_TEXT = """
 /prs — Browse and merge Pull Requests
 /newissue — Create a new GitHub issue
 /run — Start the AI agent on an issue
+/schedule — 📅 جدولة Issue لتُنفَّذ تلقائياً في وقت محدد
+/scheduled — 📋 عرض جميع المهام المجدولة وحذفها
 /status — View current agent job status
 /stop — Stop the running agent
 /help — Show this help
@@ -29,6 +31,12 @@ HELP_TEXT = """
 2. Use /run to select that issue and launch the agent
 3. Watch progress updates arrive automatically
 4. When done, the bot sends a PR link
+
+*Scheduling:*
+1. Use /schedule to pick a repo → issue → date/time
+2. Format: `DD/MM HH:MM` (e.g. `25/09 14:00`) — UTC time
+3. The agent runs automatically when the time arrives ✨
+4. Use /scheduled to view or cancel pending jobs
 
 *Agent flow:*
 🔍 Inspect → 🛠 Implement → 🧪 Test → 🔧 Fix → 📦 Commit → ⬆️ Push → 🔀 PR

@@ -45,16 +45,38 @@ class GitService:
     # ------------------------------------------------------------------
 
     async def _run(
-        self, *args: str, cwd: Path, check: bool = True
+        self,
+        *args: str,
+        cwd: Path,
+        check: bool = True,
+        timeout: float | None = None,
     ) -> tuple[int, str, str]:
-        """Run a git command and return (returncode, stdout, stderr)."""
+        """Run a git command with an optional timeout and return (returncode, stdout, stderr)."""
+        from app.config.settings import settings
+
+        timeout_sec = timeout if timeout is not None else settings.GIT_OPERATION_TIMEOUT_SECONDS
+
         proc = await asyncio.create_subprocess_exec(
             *args,
             cwd=str(cwd),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout_b, stderr_b = await proc.communicate()
+        try:
+            stdout_b, stderr_b = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout_sec
+            )
+        except TimeoutError:
+            try:
+                proc.kill()
+                await proc.wait()
+            except ProcessLookupError:
+                pass
+            logger.error("Git command timed out after %ss: %s", timeout_sec, " ".join(args))
+            raise TimeoutError(
+                f"git command timed out after {timeout_sec}s: {' '.join(args)}"
+            )
+
         stdout = stdout_b.decode(errors="replace")
         stderr = stderr_b.decode(errors="replace")
         if check and proc.returncode != 0:
@@ -93,7 +115,12 @@ class GitService:
         await self._run("git", "checkout", branch, cwd=repo_path)
 
     async def fetch(self, repo_path: Path) -> None:
-        await self._run("git", "fetch", "--prune", cwd=repo_path)
+        from app.config.settings import settings
+        await self._run(
+            "git", "fetch", "--prune",
+            cwd=repo_path,
+            timeout=settings.GIT_NETWORK_TIMEOUT_SECONDS,
+        )
 
     async def status(self, repo_path: Path) -> GitStatus:
         branch = await self.current_branch(repo_path)
@@ -163,6 +190,7 @@ class GitService:
         remote: str = "origin",
         branch: str | None = None,
     ) -> None:
+        from app.config.settings import settings
         if branch is None:
             branch = await self.current_branch(repo_path)
         if branch in ("main", "master"):
@@ -170,7 +198,9 @@ class GitService:
                 f"Refusing to push directly to protected branch '{branch}'"
             )
         await self._run(
-            "git", "push", "--set-upstream", remote, branch, cwd=repo_path
+            "git", "push", "--set-upstream", remote, branch,
+            cwd=repo_path,
+            timeout=settings.GIT_NETWORK_TIMEOUT_SECONDS,
         )
         logger.info("Pushed %s to %s/%s", branch, remote, branch)
 

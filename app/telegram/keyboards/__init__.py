@@ -35,6 +35,8 @@ CB_PROJECT = "proj:"
 CB_PROJECT_PAGE = "proj_page:"
 CB_SETDIR = "cmd_setdir"
 CB_REFRESH_PROJ = "proj_refresh"
+CB_SCHEDULE_DEL = "sched_del:"
+CB_SCHEDULE_LIST = "sched_list"
 
 _REPOS_PER_PAGE = 8
 _PROJECTS_PER_PAGE = 8
@@ -50,6 +52,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🔀 Pull Requests", callback_data="menu:prs")],
         [InlineKeyboardButton("🚀 Run Agent", callback_data="menu:run")],
         [InlineKeyboardButton("➕ Create Issue", callback_data="menu:newissue")],
+        [InlineKeyboardButton("📅 Schedule Issue", callback_data="menu:schedule")],
         [InlineKeyboardButton("📊 Agent Status", callback_data="menu:status")],
     ])
 
@@ -362,3 +365,38 @@ def project_detail_keyboard(
     ])
     return InlineKeyboardMarkup(rows)
 
+
+# ---------------------------------------------------------------------------
+# Schedule keyboards
+# ---------------------------------------------------------------------------
+
+def scheduled_jobs_keyboard(
+    jobs: list,
+    include_cancel: bool = True,
+) -> InlineKeyboardMarkup:
+    """Keyboard listing scheduled jobs with a delete button per row."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for sj in jobs:
+        label = (
+            f"{'✅' if sj.status == 'LAUNCHED' else '⏳'} "
+            f"{sj.repo_full_name.split('/')[-1]} #{sj.issue_number} — {sj.display_time()}"
+        )
+        row = [InlineKeyboardButton(label, callback_data=f"sched_noop:{sj.id}")]
+        if sj.status == "PENDING":
+            row.append(
+                InlineKeyboardButton("🗑 Delete", callback_data=f"{CB_SCHEDULE_DEL}{sj.id}")
+            )
+        rows.append(row)
+    if include_cancel:
+        rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="menu:start")])
+    return InlineKeyboardMarkup(rows)
+
+
+def schedule_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Confirm/Cancel keyboard for scheduling a job."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Confirm", callback_data="sched_confirm"),
+            InlineKeyboardButton("❌ Cancel", callback_data="cancel"),
+        ]
+    ])
