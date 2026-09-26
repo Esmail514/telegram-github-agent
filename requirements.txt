@@ -7,6 +7,7 @@ pydantic-settings>=2.3
 python-dotenv>=1.0
 httpx>=0.27
 aiofiles>=23.0
+psutil>=5.9
 
 # Dev / test
 pytest>=8.0

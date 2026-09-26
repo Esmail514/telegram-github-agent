@@ -46,6 +46,7 @@ class AgentResult:
     files_changed: list[str] = field(default_factory=list)
     error: str | None = None
     raw_output: str = ""                # Last N lines of stdout for debugging
+    token_exhausted: bool = False       # Set when agent stops due to quota/token exhaustion
 
 
 ProgressCallback = Callable[[str], Awaitable[None]]

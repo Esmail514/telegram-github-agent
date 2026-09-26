@@ -12,11 +12,20 @@ from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
     CommandHandler,
+    MessageHandler,
+    filters,
 )
 
 if TYPE_CHECKING:
     from telegram.ext import CallbackContext
 
+from app.telegram.handlers.accounts import (
+    accounts_callback,
+    accounts_command,
+    deleteaccount_command,
+    resume_command,
+    saveaccount_command,
+)
 from app.telegram.handlers.help import help_handler
 from app.telegram.handlers.issues import (
     issue_page_callback,
@@ -63,15 +72,17 @@ from app.telegram.handlers.repos import (
 from app.telegram.handlers.run import build_run_handler
 from app.telegram.handlers.schedule import (
     build_schedule_handler,
-    schedule_list_command,
     sched_delete_callback,
+    schedule_list_command,
 )
 from app.telegram.handlers.start import menu_callback, start_handler
 from app.telegram.handlers.status import (
     status_handler,
     status_refresh_callback,
     stop_job_callback,
+    sysinfo_cleanup_callback,
     sysinfo_handler,
+    sysinfo_refresh_callback,
 )
 from app.telegram.handlers.stop import stop_handler
 
@@ -136,6 +147,49 @@ def build_application(token: str) -> Application:
     app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("sysinfo", sysinfo_handler))
     app.add_handler(CommandHandler("scheduled", schedule_list_command))
+    app.add_handler(CommandHandler("accounts", accounts_command))
+    app.add_handler(CommandHandler("saveaccount", saveaccount_command))
+    app.add_handler(CommandHandler("deleteaccount", deleteaccount_command))
+    app.add_handler(CommandHandler("resume", resume_command))
+
+    # ------------------------------------------------------------------
+    # Personal use mode commands & callbacks
+    # ------------------------------------------------------------------
+    from app.telegram.handlers.personal import (
+        getfile_handler,
+        incoming_file_handler,
+        ls_handler,
+        personal_killswitch_confirm_callback,
+        personal_menu_handler,
+        personal_off_handler,
+        personal_on_rejection_handler,
+        pkill_cancel_callback,
+        pkill_confirm_callback,
+        pkill_handler,
+        ps_handler,
+        shell_handler,
+        task_handler,
+        task_stop_handler,
+    )
+    app.add_handler(CommandHandler("personal", personal_menu_handler))
+    app.add_handler(CommandHandler("personal_off", personal_off_handler))
+    app.add_handler(CommandHandler("personal_on", personal_on_rejection_handler))
+    app.add_handler(CommandHandler("task", task_handler))
+    app.add_handler(CommandHandler("task_stop", task_stop_handler))
+    app.add_handler(CommandHandler("getfile", getfile_handler))
+    app.add_handler(CommandHandler("download", getfile_handler))
+    app.add_handler(CommandHandler("shell", shell_handler))
+    app.add_handler(CommandHandler("ls", ls_handler))
+    app.add_handler(CommandHandler("ps", ps_handler))
+    app.add_handler(CommandHandler("pkill", pkill_handler))
+    app.add_handler(MessageHandler(filters.Document.ALL, incoming_file_handler))
+
+    app.add_handler(CallbackQueryHandler(personal_menu_handler, pattern="^personal:menu$"))
+    app.add_handler(CallbackQueryHandler(personal_off_handler, pattern="^personal:killswitch_ask$"))
+    app.add_handler(CallbackQueryHandler(personal_killswitch_confirm_callback, pattern="^personal:killswitch_confirm$"))
+    app.add_handler(CallbackQueryHandler(task_stop_handler, pattern="^personal:task_stop$"))
+    app.add_handler(CallbackQueryHandler(pkill_confirm_callback, pattern="^pkill:confirm$"))
+    app.add_handler(CallbackQueryHandler(pkill_cancel_callback, pattern="^pkill:cancel$"))
 
     # ------------------------------------------------------------------
     # Callback query handlers (inline keyboard buttons)
@@ -176,6 +230,10 @@ def build_application(token: str) -> Application:
     app.add_handler(CallbackQueryHandler(status_refresh_callback, pattern="^status:refresh$"))
     app.add_handler(CallbackQueryHandler(stop_job_callback, pattern="^stop_job$"))
 
+    # Sysinfo: refresh & DB cleanup
+    app.add_handler(CallbackQueryHandler(sysinfo_refresh_callback, pattern="^sysinfo:refresh$"))
+    app.add_handler(CallbackQueryHandler(sysinfo_cleanup_callback, pattern="^sysinfo:cleanup$"))
+
     # Polish with AI
     app.add_handler(CallbackQueryHandler(polish_issue_start, pattern="^polish_issue:\\d+$"))
     app.add_handler(CallbackQueryHandler(polish_newissue_start, pattern="^polish_newissue$"))
@@ -197,6 +255,14 @@ def build_application(token: str) -> Application:
     app.add_handler(CallbackQueryHandler(sched_delete_callback, pattern="^sched_del:\\d+$"))
     # Schedule: noop for info-only buttons
     app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer(), pattern="^sched_noop:"))
+
+    # Antigravity Accounts & Resumption
+    app.add_handler(
+        CallbackQueryHandler(
+            accounts_callback,
+            pattern=r"^(menu:accounts|acc_switch:|acc_resume:|acc_save)",
+        )
+    )
 
     logger.info("Telegram Application built with all handlers registered")
     return app

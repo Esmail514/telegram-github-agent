@@ -3,7 +3,6 @@ Unit tests for Git and Workspace timeouts.
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,7 +19,7 @@ async def test_git_service_run_timeout():
 
     # Mock asyncio.create_subprocess_exec returning a slow process
     mock_proc = MagicMock()
-    mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+    mock_proc.communicate = AsyncMock(side_effect=TimeoutError())
     mock_proc.kill = MagicMock()
     mock_proc.wait = AsyncMock()
 
@@ -38,7 +37,7 @@ async def test_workspace_clone_timeout(tmp_path: Path):
     manager = WorkspaceManager(workspace_root=tmp_path)
 
     mock_proc = MagicMock()
-    mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+    mock_proc.communicate = AsyncMock(side_effect=TimeoutError())
     mock_proc.kill = MagicMock()
     mock_proc.wait = AsyncMock()
 

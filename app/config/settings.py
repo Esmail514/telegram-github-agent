@@ -164,9 +164,144 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Controller-enforced verification pipeline
+    # ------------------------------------------------------------------
+    VERIFICATION_CHECKS_JSON: str | None = Field(
+        None,
+        description=(
+            "Trusted JSON policy for controller-run verification checks. "
+            "List of {\"name\", \"command\" (argv list), \"timeout\", \"required\", "
+            "\"skip_on_previous_failure\"}. When unset the built-in default "
+            "(git diff --check) is used. Commands are never read from repository files."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Human-in-the-loop approval policy
+    # ------------------------------------------------------------------
+    APPROVAL_POLICY: Literal["autonomous", "before_commit", "before_push", "before_pr"] = Field(
+        "autonomous",
+        description=(
+            "Approval gate policy. 'autonomous' = no approvals (current default). "
+            "before_commit / before_push / before_pr require operator approval "
+            "for MEDIUM/HIGH risk changes before that git action."
+        ),
+    )
+    APPROVAL_TIMEOUT_MINUTES: int = Field(
+        30, ge=1, le=1440, description="How long an approval request stays valid"
+    )
+    PROTECTED_PATHS: str = Field(
+        ".github/workflows,migrations,.env*",
+        description=(
+            "Comma-separated glob paths that are ALWAYS classified HIGH risk "
+            "for approval. Cannot be lowered by repository content."
+        ),
+    )
+
+    @property
+    def protected_paths_list(self) -> list[str]:
+        return [p.strip() for p in self.PROTECTED_PATHS.split(",") if p.strip()]
+
+    # ------------------------------------------------------------------
+    # Agent fallback architecture
+    # ------------------------------------------------------------------
+    FALLBACK_MODE: Literal["automatic", "ask_before_fallback", "disabled"] = Field(
+        "automatic",
+        description=(
+            "Fallback mode when the primary agent fails with a retryable "
+            "infrastructure failure (missing binary, start-up failure, rate "
+            "limit, transport failure). 'ask_before_fallback' pauses for the "
+            "operator; 'disabled' never falls back."
+        ),
+    )
+    FALLBACK_TIMEOUT_ALLOWED: bool = Field(
+        False,
+        description=(
+            "Allow falling back when the failure was a TIMEOUT. Off by default "
+            "because a timed-out agent may still be mid-edit."
+        ),
+    )
+    AGENT_FALLBACK_ORDER: str = Field(
+        "antigravity,codex,opencode,claude,gemini",
+        description="Priority order used when choosing fallback agents.",
+    )
+
+    # ------------------------------------------------------------------
+    # Lifecycle Notifications
+    # ------------------------------------------------------------------
+    NOTIFY_ON_STARTUP: bool = Field(
+        True,
+        description="Send a Telegram notification to TELEGRAM_ALLOWED_USER_ID on startup",
+    )
+    NOTIFY_ON_SHUTDOWN: bool = Field(
+        True,
+        description="Send a Telegram notification to TELEGRAM_ALLOWED_USER_ID on shutdown",
+    )
+
+    # ------------------------------------------------------------------
     # Logging
     # ------------------------------------------------------------------
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    LOGS_PAGE_SIZE: int = Field(
+        15, ge=5, le=100, description="Number of event lines shown per /logs page"
+    )
+
+    # ------------------------------------------------------------------
+    # Personal Use Mode
+    # ------------------------------------------------------------------
+    PERSONAL_MODE: bool = Field(
+        False,
+        description="Enable personal use commands: run shell commands, browse files, manage processes. DISABLED by default for safety.",
+    )
+    PERSONAL_COMMAND_TIMEOUT: int = Field(
+        30,
+        ge=5,
+        le=300,
+        description="Max seconds for a personal shell command before it is killed",
+    )
+    PERSONAL_ALLOWED_DIRS: str = Field(
+        "",
+        description=(
+            "Comma-separated list of directories the bot is allowed to browse/run in. "
+            "Empty string = no restriction (all dirs allowed). "
+            "Example: C:\\Users\\me\\Projects,D:\\Work"
+        ),
+    )
+
+    @property
+    def personal_allowed_dirs_list(self) -> list[str]:
+        """Return PERSONAL_ALLOWED_DIRS as a list of stripped strings (empty = unrestricted)."""
+        if not self.PERSONAL_ALLOWED_DIRS.strip():
+            return []
+        return [d.strip() for d in self.PERSONAL_ALLOWED_DIRS.split(",") if d.strip()]
+
+    PERSONAL_WORKSPACE_DIR: Path = Field(
+        default=Path("workspaces/personal"),
+        description="Directory used for incoming personal files and tasks",
+    )
+    PERSONAL_MAX_UPLOAD_SIZE_MB: int = Field(
+        50,
+        ge=1,
+        le=100,
+        description="Maximum file upload size in MB via Telegram",
+    )
+    PERSONAL_MAX_DOWNLOAD_SIZE_MB: int = Field(
+        50,
+        ge=1,
+        le=50,
+        description="Maximum file download size in MB via Telegram (Telegram Bot API limit is 50MB)",
+    )
+    PERSONAL_SENSITIVE_PATTERNS: str = Field(
+        ".env*|*id_rsa*|*.pem|*.key|agent.db|*.p12|*.pfx",
+        description="Pipe-separated glob patterns of sensitive files forbidden from download",
+    )
+
+    @property
+    def personal_sensitive_patterns_list(self) -> list[str]:
+        """Return sensitive file glob patterns as a list."""
+        if not self.PERSONAL_SENSITIVE_PATTERNS.strip():
+            return []
+        return [p.strip() for p in self.PERSONAL_SENSITIVE_PATTERNS.split("|") if p.strip()]
 
     # ------------------------------------------------------------------
     # Validators

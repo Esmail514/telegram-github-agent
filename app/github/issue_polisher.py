@@ -40,6 +40,7 @@ object (no markdown fences, no extra text) with exactly these keys:
 
 Rules:
 - Keep the original intent and all important details.
+- Preserve any embedded images, screenshots, links, or markdown media (![alt](url)) from the original body.
 - The body MUST use GitHub Flavored Markdown.
 - Labels must be chosen from common GitHub labels: bug, enhancement, documentation, question, help wanted, good first issue, performance, security, refactor, test, ci/cd, breaking change. Only include labels that clearly apply.
 - Do NOT invent information that was not in the original issue.
@@ -235,15 +236,56 @@ class IssuePolisher:
         if exe:
             try:
                 raw_json = await self._call_antigravity_cli(exe, user_msg)
-                return self._parse_response(raw_json)
+                result = self._parse_response(raw_json)
+                # Ensure the CLI-generated title carries a conventional prefix
+                result.title = self._ensure_conventional_prefix(result.title, title, body)
+                return result
             except Exception as exc:
                 logger.info(
                     "Antigravity CLI output not directly parsable as JSON (%s), applying Antigravity issue generator",
                     exc,
                 )
 
-        # 2. Apply Antigravity issue generator rules
+        # 2. Apply Antigravity issue generator rules (always produces prefixed titles)
         return self._format_with_antigravity(repo_full_name, title, body)
+
+    _CONVENTIONAL_PATTERN = re.compile(
+        r"^(?:fix|feat|docs|refactor|perf|security|test|ci|chore|build|style)(?:\([a-zA-Z0-9_\-\./]+\))?:\s*",
+        re.IGNORECASE,
+    )
+
+    def _ensure_conventional_prefix(self, polished_title: str, original_title: str, original_body: str) -> str:
+        """
+        If *polished_title* already starts with a known conventional-commit prefix (with or without scope),
+        return it unchanged. Otherwise classify the issue from the original inputs
+        and prepend the correct prefix.
+        """
+        if self._CONVENTIONAL_PATTERN.match(polished_title):
+            return polished_title
+
+        combined = f"{original_title} {original_body}".lower()
+        if any(w in combined for w in [
+            "bug", "fix", "error", "crash", "broken", "fail", "failure",
+            "exception", "traceback", "not working", "500", "404", "freeze", "leak",
+            "خلل", "خطأ", "عطل", "مشكلة", "انهيار", "توقف", "فشل", "لا يعمل", "باغ",
+        ]):
+            prefix = "fix: "
+        elif any(w in combined for w in ["doc", "docs", "readme", "documentation", "توثيق"]):
+            prefix = "docs: "
+        elif any(w in combined for w in ["refactor", "cleanup", "rewrite", "simplify", "إعادة هيكلة"]):
+            prefix = "refactor: "
+        elif any(w in combined for w in ["perf", "performance", "slow", "optimize", "أداء"]):
+            prefix = "perf: "
+        elif any(w in combined for w in ["security", "vuln", "vulnerability", "أمان", "ثغرة"]):
+            prefix = "security: "
+        elif any(w in combined for w in ["test", "tests", "coverage", "pytest", "اختبار"]):
+            prefix = "test: "
+        elif any(w in combined for w in ["ci", "cd", "pipeline", "workflow", "github actions"]):
+            prefix = "ci: "
+        else:
+            prefix = "feat: "
+
+        return f"{prefix}{polished_title}"
 
     def _format_with_antigravity(
         self, repo_full_name: str, title: str, body: str

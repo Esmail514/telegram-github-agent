@@ -35,7 +35,7 @@ async def prs_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await show_project_select_for_prs(update, context, page=0)
         return
     assert update.message
-    await update.message.reply_text("⏳ Fetching repositories...")
+    await update.message.reply_text("⏳ جاري جلب المستودعات من GitHub...")
     await show_repo_select_for_prs(update, context)
 
 
@@ -98,8 +98,8 @@ async def prs_proj_selected_callback(update: Update, context: ContextTypes.DEFAU
 
     if not project or not project.repo_full_name:
         await query.edit_message_text(
-            f"⚠️ Project `{project.name if project else raw_val}` has no GitHub repository linked.\n"
-            f"Cannot fetch PRs for this folder.",
+            f"⚠️ المشروع `{project.name if project else raw_val}` غير مرتبط بمستودع GitHub.\n"
+            f"لا يمكن جلب طلبات السحب (PRs) لهذا المجلد.",
             parse_mode="Markdown",
         )
         return
@@ -125,7 +125,7 @@ async def show_repo_select_for_prs(
         )
     except Exception as exc:
         logger.error("Failed to list repos for PRs: %s", exc)
-        msg = "❌ Failed to fetch repositories."
+        msg = "❌ تعذر جلب المستودعات من GitHub."
         if update.callback_query:
             await update.callback_query.edit_message_text(msg)
         elif update.message:
@@ -139,7 +139,11 @@ async def show_repo_select_for_prs(
         page_prefix="prs_repo_page:",
         include_cancel=True,
     )
-    text = f"🔀 *Pull Requests*\n\nSelect a repository to view open PRs (page {page + 1}):"
+    text = (
+        f"🔀 *طلبات السحب (Pull Requests)* (صفحة {page + 1})\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "اختر مستودعاً لعرض ومتابعة طلبات السحب المفتوحة:"
+    )
 
     if update.callback_query:
         await update.callback_query.edit_message_text(
@@ -179,7 +183,7 @@ async def show_prs_for_repo(
     query, context: ContextTypes.DEFAULT_TYPE, full_name: str, page: int = 0
 ) -> None:
     """Load and display pull requests for a given repository."""
-    await query.edit_message_text(f"⏳ Fetching PRs for `{full_name}`...", parse_mode="Markdown")
+    await query.edit_message_text(f"⏳ جاري جلب طلبات السحب لـ `{full_name}`...", parse_mode="Markdown")
 
     try:
         prs = await asyncio.get_event_loop().run_in_executor(
@@ -187,20 +191,21 @@ async def show_prs_for_repo(
         )
     except Exception as exc:
         logger.error("Failed to fetch PRs for %s: %s", full_name, exc)
-        await query.edit_message_text(f"❌ Could not load PRs: {str(exc)[:200]}")
+        await query.edit_message_text(f"❌ تعذر تحميل طلبات السحب: {str(exc)[:200]}")
         return
 
     if not prs:
         await query.edit_message_text(
-            f"🔀 No open pull requests found for `{full_name}`.",
+            f"🔀 لم يتم العثور على طلبات سحب مفتوحة في `{full_name}`.",
             parse_mode="Markdown",
         )
         return
 
     keyboard = prs_keyboard(prs, repo_full_name=full_name, page=page, include_cancel=True)
     await query.edit_message_text(
-        f"🔀 *Open Pull Requests* for `{full_name}` (page {page + 1}):\n\n"
-        f"Select a PR to view details and merge:",
+        f"🔀 *طلبات السحب في `{full_name}`* (صفحة {page + 1})\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "اختر Pull Request لعرض التفاصيل أو دمجه:",
         reply_markup=keyboard,
         parse_mode="Markdown",
     )
@@ -217,7 +222,7 @@ async def pr_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     page = int((query.data or "").replace("pr_page:", ""))
 
     if not repo:
-        await query.edit_message_text("❌ Repository context lost. Use /prs to select again.")
+        await query.edit_message_text("❌ فُقد سياق المستودع، يرجى كتابة /prs للاختيار من جديد.")
         return
 
     await show_prs_for_repo(query, context, repo, page=page)
@@ -234,10 +239,10 @@ async def pr_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     repo = (context.user_data or {}).get("selected_pr_repo", "")
 
     if not repo:
-        await query.edit_message_text("❌ Repository context lost. Use /prs to browse again.")
+        await query.edit_message_text("❌ فُقد سياق المستودع، يرجى كتابة /prs للاختيار من جديد.")
         return
 
-    await query.edit_message_text(f"⏳ Loading PR #{pr_number}...")
+    await query.edit_message_text(f"⏳ جاري تحميل تفاصيل طلب السحب #{pr_number}...")
 
     try:
         pr = await asyncio.get_event_loop().run_in_executor(
@@ -245,16 +250,18 @@ async def pr_selected_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
     except Exception as exc:
         logger.error("Failed to fetch PR #%d: %s", pr_number, exc)
-        await query.edit_message_text(f"❌ Failed to fetch PR #{pr_number}: {str(exc)[:200]}")
+        await query.edit_message_text(f"❌ تعذر جلب تفاصيل طلب السحب #{pr_number}: {str(exc)[:200]}")
         return
 
-    author_str = f"by `@{pr.user_login}`" if pr.user_login else ""
+    author_str = f"بواسطة `@{pr.user_login}`" if pr.user_login else ""
     text = (
-        f"🔀 *Pull Request #{pr.number}* {author_str}\n\n"
-        f"*Title:* {pr.title}\n"
-        f"*Branches:* `{pr.head_branch}` ➔ `{pr.base_branch}`\n"
-        f"*State:* `{pr.state.upper()}`\n\n"
-        f"[Open on GitHub]({pr.html_url})"
+        f"🔀 *Pull Request #{pr.number} | {pr.state.upper()}*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 *{pr.title}*\n"
+        f"👤 {author_str}\n"
+        f"🌿 *الفرع:* `{pr.head_branch}` ➔ `{pr.base_branch}`\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔗 [فتح الـ PR على GitHub]({pr.html_url})"
     )
 
     await query.edit_message_text(
@@ -279,16 +286,16 @@ async def merge_pr_start_callback(update: Update, context: ContextTypes.DEFAULT_
     raw_data = (query.data or "").replace("merge_pr:", "")
     parts = raw_data.rsplit(":", 1)
     if len(parts) != 2:
-        await query.edit_message_text("❌ Invalid merge request.")
+        await query.edit_message_text("❌ طلب دمج غير صالح.")
         return
 
     repo, pr_number_str = parts
     pr_number = int(pr_number_str)
 
     text = (
-        f"🔀 *Merge Pull Request #{pr_number}*\n\n"
-        f"Repository: `{repo}`\n\n"
-        f"Choose your preferred merge strategy:"
+        f"🔀 *دمج طلب السحب #{pr_number}*\n\n"
+        f"المستودع: `{repo}`\n\n"
+        f"اختر استراتيجية الدمج المفضلة:"
     )
 
     await query.edit_message_text(
@@ -311,7 +318,7 @@ async def merge_pr_execute_callback(update: Update, context: ContextTypes.DEFAUL
     raw_data = (query.data or "").replace("do_merge:", "")
     parts = raw_data.split(":", 2)
     if len(parts) != 3:
-        await query.edit_message_text("❌ Invalid merge execution request.")
+        await query.edit_message_text("❌ طلب تنفيذ دمج غير صالح.")
         return
 
     method_str, repo, pr_number_str = parts
@@ -320,7 +327,7 @@ async def merge_pr_execute_callback(update: Update, context: ContextTypes.DEFAUL
         method_str if method_str in ("merge", "squash", "rebase") else "squash"  # type: ignore[assignment]
     )
 
-    await query.edit_message_text(f"⏳ Merging PR #{pr_number} via `{method}`...")
+    await query.edit_message_text(f"⏳ جاري دمج طلب السحب #{pr_number} باستخدام `{method}`...")
 
     result = await asyncio.get_event_loop().run_in_executor(
         None,
@@ -335,17 +342,17 @@ async def merge_pr_execute_callback(update: Update, context: ContextTypes.DEFAUL
     if result.merged:
         sha_display = f"\n*Commit SHA:* `{result.sha[:7]}`" if result.sha else ""
         await query.edit_message_text(
-            f"🎉 *Pull Request #{pr_number} merged successfully!*\n\n"
-            f"*Repository:* `{repo}`\n"
-            f"*Strategy:* `{method}`{sha_display}\n\n"
-            f"The changes are now in the default branch.",
+            f"🎉 *تم دمج طلب السحب #{pr_number} بنجاح!*\n\n"
+            f"*المستودع:* `{repo}`\n"
+            f"*الاستراتيجية:* `{method}`{sha_display}\n\n"
+            f"أصبحت التغييرات الآن مدمجة في الفرع الافتراضي الرئيسي.",
             parse_mode="Markdown",
         )
     else:
         await query.edit_message_text(
-            f"❌ *Failed to merge PR #{pr_number}*\n\n"
-            f"*Repository:* `{repo}`\n"
-            f"*Error:* {result.message}\n\n"
-            f"Please review required checks, branch protection, or merge conflicts on GitHub.",
+            f"❌ *فشل دمج طلب السحب #{pr_number}*\n\n"
+            f"*المستودع:* `{repo}`\n"
+            f"*الخطأ:* {result.message}\n\n"
+            f"يرجى مراجعة إعدادات حماية الفرع أو فحص وجود تعارضات دمج (Merge Conflicts) على GitHub.",
             parse_mode="Markdown",
         )

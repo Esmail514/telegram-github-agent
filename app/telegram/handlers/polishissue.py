@@ -66,7 +66,7 @@ async def polish_issue_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     if not repo:
         await query.edit_message_text(
-            "❌ Repository context lost. Use /issues to browse again."
+            "❌ فُقد سياق المستودع، استخدم /issues للتصفح مجدداً."
         )
         return
 
@@ -76,7 +76,7 @@ async def polish_issue_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data[_KEY_SOURCE] = "existing"
 
     await query.edit_message_text(
-        f"✨ *Fetching issue #{issue_number}...*",
+        f"✨ *جاري جلب تفاصيل الـ Issue #{issue_number}...*",
         parse_mode="Markdown",
     )
 
@@ -87,12 +87,12 @@ async def polish_issue_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
     except Exception as exc:
         logger.error("polish: failed to get issue #%d from %s: %s", issue_number, repo, exc)
-        await query.edit_message_text(f"❌ Could not load issue #{issue_number}.")
+        await query.edit_message_text(f"❌ تعذر تحميل الـ Issue #{issue_number}.")
         return
 
     await query.edit_message_text(
-        f"🤖 *Polishing issue #{issue_number} with Antigravity…*\n\n"
-        f"_(This may take a few seconds)_",
+        f"🤖 *جاري تحسين الـ Issue #{issue_number} بالذكاء الاصطناعي…*\n\n"
+        f"_(قد يستغرق ذلك بضع ثوانٍ)_",
         parse_mode="Markdown",
     )
 
@@ -123,7 +123,7 @@ async def polish_newissue_start(update: Update, context: ContextTypes.DEFAULT_TY
 
     if not repo or not title:
         await query.edit_message_text(
-            "❌ New issue context lost. Please start /newissue again."
+            "❌ فُقدت بيانات الـ Issue، يرجى إعادة استخدام /newissue."
         )
         return
 
@@ -133,7 +133,7 @@ async def polish_newissue_start(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data[_KEY_ISSUE_NUM] = None
 
     await query.edit_message_text(
-        "🤖 *Polishing your draft issue with Antigravity…*\n\n_(This may take a few seconds)_",
+        "🤖 *جاري تحسين مسودة الـ Issue بالذكاء الاصطناعي…*\n\n_(قد يستغرق ذلك بضع ثوانٍ)_",
         parse_mode="Markdown",
     )
 
@@ -170,7 +170,7 @@ async def _run_polish(
         )
     except RuntimeError as exc:
         # No API key configured
-        msg = f"⚠️ *AI not configured*\n\n{exc}"
+        msg = f"⚠️ *الذكاء الاصطناعي غير مهيأ*\n\n{exc}"
         if is_callback:
             await query_or_message.edit_message_text(msg, parse_mode="Markdown")
         else:
@@ -178,7 +178,7 @@ async def _run_polish(
         return
     except Exception as exc:
         logger.error("polish: AI call failed: %s", exc)
-        msg = f"❌ AI request failed: {str(exc)[:200]}"
+        msg = f"❌ فشل طلب الذكاء الاصطناعي: {str(exc)[:200]}"
         if is_callback:
             await query_or_message.edit_message_text(msg)
         else:
@@ -195,16 +195,16 @@ async def _run_polish(
     labels_str = ", ".join(f"`{lb}`" for lb in polished.labels) if polished.labels else "none"
     body_preview = (polished.body[:500] + "\n…") if len(polished.body) > 500 else polished.body
 
-    issue_ref = f"issue #{issue_number}" if issue_number else "draft issue"
+    issue_ref = f"للـ Issue #{issue_number}" if issue_number else "لمسودة الـ Issue"
     text = (
-        f"✨ *Antigravity-Polished {issue_ref}*\n\n"
-        f"*Title:* {polished.title}\n\n"
-        f"*Labels:* {labels_str}\n\n"
-        f"*Description:*\n{body_preview}\n\n"
+        f"✨ *صياغة الذكاء الاصطناعي المحسنة {issue_ref}*\n\n"
+        f"📌 *العنوان:* {polished.title}\n\n"
+        f"🏷 *التصنيفات:* {labels_str}\n\n"
+        f"📝 *الوصف:*\n{body_preview}\n\n"
         f"━━━━━━━━━━━━━━━━\n"
         f"💡 _{polished.explanation}_\n\n"
-        f"Tap *✅ Apply* to update GitHub, *🔄 Regenerate* for a new attempt, "
-        f"or *❌ Cancel* to discard."
+        f"اضغط *✅ تطبيق التعديل* للحفظ على GitHub، أو *🔄 إعادة الصياغة* لمحاولة أخرى، "
+        f"أو *❌ إلغاء* للتراجع."
     )
 
     if is_callback:
@@ -241,7 +241,7 @@ async def polish_apply_callback(update: Update, context: ContextTypes.DEFAULT_TY
     labels = ud.get(_KEY_POLISHED_LABELS, [])
 
     if not repo or not title:
-        await query.edit_message_text("❌ Context lost. Please start over.")
+        await query.edit_message_text("❌ فُقد السياق، يرجى البدء من جديد.")
         return
 
     if source == "newissue":
@@ -251,20 +251,20 @@ async def polish_apply_callback(update: Update, context: ContextTypes.DEFAULT_TY
             context.user_data["ni_body"] = body
             context.user_data["ni_labels"] = labels
         await query.edit_message_text(
-            "✅ *Draft updated with Antigravity improvements!*\n\n"
-            f"*Title:* {title}\n\n"
-            "The polished content has been applied to your draft. "
-            "Use /newissue to continue and create the issue.",
+            "✅ *تم تحديث المسودة بصياغة الذكاء الاصطناعي!*\n\n"
+            f"*العنوان:* {title}\n\n"
+            "تم تطبيق المحتوى المحسن على مسودتك. "
+            "استخدم /newissue للمتابعة وإنشاء الـ Issue.",
             parse_mode="Markdown",
         )
         return
 
     # Existing issue — apply via GitHub API
     if issue_num is None:
-        await query.edit_message_text("❌ No issue number found. Cannot apply.")
+        await query.edit_message_text("❌ لم يتم العثور على رقم الـ Issue. لا يمكن التطبيق.")
         return
 
-    await query.edit_message_text(f"⏳ Updating issue #{issue_num} on GitHub…")
+    await query.edit_message_text(f"⏳ جاري تحديث الـ Issue #{issue_num} على GitHub…")
 
     try:
         updated = await asyncio.get_event_loop().run_in_executor(
@@ -280,14 +280,14 @@ async def polish_apply_callback(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as exc:
         logger.error("polish apply: failed to update issue #%d: %s", issue_num, exc)
         await query.edit_message_text(
-            f"❌ Failed to update issue #{issue_num}: {str(exc)[:200]}"
+            f"❌ فشل تحديث الـ Issue #{issue_num}: {str(exc)[:200]}"
         )
         return
 
     await query.edit_message_text(
-        f"✅ *Issue #{updated.number} updated!*\n\n"
-        f"*Title:* {updated.title}\n\n"
-        f"[🔗 View on GitHub]({updated.html_url})",
+        f"✅ *تم تحديث الـ Issue #{updated.number} بنجاح!*\n\n"
+        f"*العنوان:* {updated.title}\n\n"
+        f"[🔗 فتح على GitHub]({updated.html_url})",
         reply_markup=issue_detail_keyboard(updated),
         parse_mode="Markdown",
     )
@@ -313,7 +313,7 @@ async def polish_regen_callback(update: Update, context: ContextTypes.DEFAULT_TY
     source = ud.get(_KEY_SOURCE, "existing")
 
     await query.edit_message_text(
-        "🔄 *Regenerating with Antigravity…*\n\n_(This may take a few seconds)_",
+        "🔄 *جاري إعادة الصياغة بالذكاء الاصطناعي…*\n\n_(قد يستغرق ذلك بضع ثوانٍ)_",
         parse_mode="Markdown",
     )
 
@@ -322,7 +322,7 @@ async def polish_regen_callback(update: Update, context: ContextTypes.DEFAULT_TY
         body = ud.get("ni_body", "")
     else:
         if not repo or issue_num is None:
-            await query.edit_message_text("❌ Context lost. Please start over.")
+            await query.edit_message_text("❌ فُقد السياق، يرجى البدء من جديد.")
             return
         try:
             issue = await asyncio.get_event_loop().run_in_executor(
@@ -332,7 +332,7 @@ async def polish_regen_callback(update: Update, context: ContextTypes.DEFAULT_TY
             body = issue.body
         except Exception as exc:
             logger.error("polish regen: failed to get issue: %s", exc)
-            await query.edit_message_text("❌ Could not reload the issue.")
+            await query.edit_message_text("❌ تعذر إعادة تحميل الـ Issue.")
             return
 
     await _run_polish(

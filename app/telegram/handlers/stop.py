@@ -19,19 +19,32 @@ async def stop_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     assert update.message
     executor = context.bot_data.get("executor")
 
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
     if executor is None:
-        await update.message.reply_text("❌ Job executor not initialised.")
+        await update.message.reply_text("❌ محرك العمليات غير متصل.")
         return
 
     active = await executor.get_active_job()
     if active is None:
-        await update.message.reply_text("📊 No active agent job to stop.")
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="menu:start")]])
+        await update.message.reply_text(
+            "🛑 *إيقاف العملية | Stop Agent*\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "💤 لا توجد عملية نشطة حالياً لإيقافها.\n"
+            "━━━━━━━━━━━━━━━━━━━━",
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
         return
 
     await update.message.reply_text(
-        f"🛑 Stopping agent...\n\n"
-        f"Repository: `{active.repo_full_name}`\n"
-        f"Issue: #{active.issue_number}",
+        "🛑 *جاري إيقاف الـ Agent...*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 *المستودع:* `{active.repo_full_name}`\n"
+        f"📌 *الـ Issue:* `#{active.issue_number}`\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "⏳ جاري إنهاء العمليات بأمان...",
         parse_mode="Markdown",
     )
 

@@ -6,23 +6,29 @@ from __future__ import annotations
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from app.runner.personal_guard import is_personal_mode_active
 from app.telegram.auth import auth_required
-from app.telegram.keyboards import main_menu_keyboard
+from app.telegram.keyboards import github_menu_keyboard, main_menu_keyboard
 
 WELCOME = (
-    "🤖 *AI Coding Agent*\n\n"
-    "I can browse your GitHub repositories, create issues, "
-    "and run an AI agent to implement them — then push a PR.\n\n"
-    "What would you like to do?"
+    "⚡️ *Antigravity Coding Assistant*\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "مرحباً! اختر ما تريد من القائمة:\n\n"
+    "🚀 *Agent* — تشغيل ومتابعة حالة المهام\n"
+    "🐙 *GitHub* — المستودعات، Issues، PRs، جدولة\n"
+    "📁 *المشاريع* — مشاريعك البرمجية المحلية\n"
+    "👥 *الحسابات* — التبديل بين حسابات Antigravity\n"
+    "🖥️ *موارد الجهاز* — استهلاك الـ RAM والـ CPU والقرص"
 )
 
 
 @auth_required
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message
+    personal_active, _ = is_personal_mode_active()
     await update.message.reply_text(
         WELCOME,
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(personal_mode=personal_active),
         parse_mode="Markdown",
     )
 
@@ -36,7 +42,15 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     data = query.data or ""
 
-    if data == "menu:projects":
+    if data == "menu:github":
+        await query.edit_message_text(
+            "🐙 *قائمة GitHub*\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "اختر الإجراء المطلوب:",
+            reply_markup=github_menu_keyboard(),
+            parse_mode="Markdown",
+        )
+    elif data == "menu:projects":
         from app.telegram.handlers.projects import show_projects
         await show_projects(update, context)
     elif data == "menu:repos":
@@ -54,10 +68,23 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     elif data == "menu:newissue":
         from app.telegram.handlers.newissue import start_newissue_flow
         await start_newissue_flow(update, context)
+    elif data == "menu:schedule":
+        from app.telegram.handlers.schedule import schedule_start
+        await schedule_start(update, context)
     elif data == "menu:status":
         from app.telegram.handlers.status import status_handler
         await status_handler(update, context)
+    elif data == "menu:accounts":
+        from app.telegram.handlers.accounts import accounts_command
+        await accounts_command(update, context)
+    elif data == "menu:sysinfo":
+        from app.telegram.handlers.status import sysinfo_handler
+        await sysinfo_handler(update, context)
+    elif data == "menu:personal":
+        from app.telegram.handlers.personal import personal_menu_handler
+        await personal_menu_handler(update, context)
     elif data == "menu:start":
+        personal_active, _ = is_personal_mode_active()
         await query.edit_message_text(
-            WELCOME, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
+            WELCOME, reply_markup=main_menu_keyboard(personal_mode=personal_active), parse_mode="Markdown"
         )

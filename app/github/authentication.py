@@ -53,3 +53,31 @@ def get_github_client() -> Github:
 
     # Should be caught by settings validator, but guard just in case
     raise RuntimeError("No GitHub authentication configured.")
+
+
+def get_raw_github_token() -> str | None:
+    """Return the raw GitHub bearer token string (PAT or App installation token)."""
+    from app.config.settings import settings
+
+    if settings.GITHUB_TOKEN is not None:
+        return settings.GITHUB_TOKEN.get_secret_value()
+
+    if (
+        settings.GITHUB_APP_ID is not None
+        and settings.GITHUB_INSTALLATION_ID is not None
+        and settings.GITHUB_PRIVATE_KEY_PATH is not None
+    ):
+        try:
+            private_key = settings.GITHUB_PRIVATE_KEY_PATH.read_text()
+            app_auth = Auth.AppAuth(
+                app_id=settings.GITHUB_APP_ID,
+                private_key=private_key,
+            )
+            integration = GithubIntegration(auth=app_auth)
+            access_token = integration.get_access_token(settings.GITHUB_INSTALLATION_ID)
+            return access_token.token
+        except Exception as exc:
+            logger.warning("Failed to obtain GitHub App installation token: %s", exc)
+
+    return None
+

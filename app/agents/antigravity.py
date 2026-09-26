@@ -64,8 +64,22 @@ class AntigravityAgent(BaseAgent):
             if ide_cmd.exists():
                 cmd_path = str(ide_cmd)
 
-        prompt = self.build_prompt(context)
         prompt_file = workspace_path / ".antigravity_task.md"
+        is_continuation = prompt_file.exists()
+        base_prompt = self.build_prompt(context)
+        if is_continuation:
+            prompt = (
+                f"{base_prompt}\n\n"
+                "## ⚠️ RESUMED TASK CONTINUATION\n"
+                "This task was paused previously (e.g. token quota reached) and is now RESUMED with a renewed token/account budget.\n"
+                "IMPORTANT INSTRUCTIONS FOR RESUMPTION:\n"
+                "1. Run `git status` and `git diff` first to review all changes already made in the previous run.\n"
+                "2. DO NOT wipe or redo completed work; continue implementing the remaining requirements.\n"
+                "3. Verify all changes and run tests before finishing.\n"
+            )
+        else:
+            prompt = base_prompt
+
         prompt_file.write_text(prompt, encoding="utf-8")
 
         await on_progress(f"🤖 Launching Antigravity CLI ({cmd_name})...")
@@ -127,6 +141,34 @@ class AntigravityAgent(BaseAgent):
             exit_code = self._process.returncode or 0
             success = exit_code == 0 and not self._stopped
 
+            token_limit_keywords = (
+                "quota exceeded",
+                "resource exhausted",
+                "resource_exhausted",
+                "rate limit",
+                "ratelimit",
+                "token limit",
+                "out of tokens",
+                "429",
+                "insufficient quota",
+                "capacity exhausted",
+                "exceeded your current quota",
+                "too many requests",
+                "credit balance is too low",
+            )
+            all_text = ("\n".join(collected_output) + "\n" + "\n".join(error_output)).lower()
+            token_exhausted = any(k in all_text for k in token_limit_keywords)
+
+            if not success and token_exhausted:
+                return AgentResult(
+                    success=False,
+                    exit_code=-2,
+                    summary="Antigravity account token limit / quota reached.",
+                    error="Account token limit or quota exceeded. Switch Antigravity account to continue.",
+                    raw_output="\n".join(collected_output[-100:]),
+                    token_exhausted=True,
+                )
+
             summary_text = "\n".join(collected_output[-15:]) if collected_output else "Antigravity CLI completed."
 
             return AgentResult(
@@ -135,6 +177,7 @@ class AntigravityAgent(BaseAgent):
                 summary=summary_text,
                 error=("\n".join(error_output[-10:]) if not success else None),
                 raw_output="\n".join(collected_output[-100:]),
+                token_exhausted=token_exhausted,
             )
 
         except FileNotFoundError:

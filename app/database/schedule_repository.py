@@ -93,6 +93,47 @@ class ScheduleRepository:
             rows = await cursor.fetchall()
             return [_row_to_job(r) for r in rows]
 
+    async def list_all_pending(self, chat_id: int | None = None) -> list[ScheduledJob]:
+        """Return all PENDING scheduled jobs ordered by scheduled_at ASC."""
+        if chat_id is not None:
+            async with self._db.conn.execute(
+                """
+                SELECT * FROM scheduled_jobs
+                WHERE status = ? AND chat_id = ?
+                ORDER BY scheduled_at ASC
+                """,
+                (ScheduledJobStatus.PENDING, chat_id),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        else:
+            async with self._db.conn.execute(
+                """
+                SELECT * FROM scheduled_jobs
+                WHERE status = ?
+                ORDER BY scheduled_at ASC
+                """,
+                (ScheduledJobStatus.PENDING,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [_row_to_job(r) for r in rows]
+
+    async def count_pending(self, chat_id: int | None = None) -> int:
+        """Return the count of PENDING scheduled jobs."""
+        if chat_id is not None:
+            async with self._db.conn.execute(
+                "SELECT COUNT(*) FROM scheduled_jobs WHERE status = ? AND chat_id = ?",
+                (ScheduledJobStatus.PENDING, chat_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return int(row[0]) if row else 0
+        else:
+            async with self._db.conn.execute(
+                "SELECT COUNT(*) FROM scheduled_jobs WHERE status = ?",
+                (ScheduledJobStatus.PENDING,),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return int(row[0]) if row else 0
+
     async def list_all(self, chat_id: int | None = None, limit: int = 20) -> list[ScheduledJob]:
         """Return all jobs, optionally filtered by chat_id."""
         if chat_id is not None:

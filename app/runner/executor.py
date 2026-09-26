@@ -14,13 +14,32 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 from app.agents.manager import agent_manager
 from app.config.settings import settings
-from app.database.repository import Database, Job, JobRepository, JobStatus
+from app.database.repository import (
+    ApprovalRepository,
+    Database,
+    Job,
+    JobRepository,
+    JobStateRepository,
+    JobStatus,
+)
 from app.github.client import RepoInfo
 from app.github.issues import IssueInfo
 from app.github.pull_requests import pr_service
+from app.runner.approvals import (
+    APPROVED,
+    BEFORE_COMMIT,
+    BEFORE_PR,
+    BEFORE_PUSH,
+    ApprovalCoordinator,
+    ApprovalPolicy,
+    RiskClassifier,
+)
 from app.runner.context_builder import context_builder
+from app.runner.fallback import AgentRouter, FailureCode
 from app.runner.git import SecretDetectedError, git_service
 from app.runner.jobs import (
     generate_job_id,
@@ -29,6 +48,12 @@ from app.runner.jobs import (
     make_pr_body,
     make_pr_title,
 )
+from app.runner.progress import ProgressReporter
+from app.runner.recovery import (
+    is_resumable,
+    token_limit_error,
+)
+from app.runner.verification import VerificationPipeline
 from app.runner.workspace import WorkspaceManager
 from app.telegram.keyboards import pr_action_keyboard
 
@@ -48,8 +73,12 @@ class JobExecutor:
     ) -> None:
         self._db = db
         self._repo = JobRepository(db)
+        self._state_repo = JobStateRepository(db)
         self._workspace = workspace or WorkspaceManager()
         self._active_task: asyncio.Task | None = None
+        self._approvals = ApprovalCoordinator(db)
+        self._verification: VerificationPipeline | None = None
+        self._router: AgentRouter | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -96,6 +125,8 @@ class JobExecutor:
             telegram_chat_id=telegram_chat_id,
         )
 
+        await self._persist_start_metadata(job_id, repo_info, issue_info)
+
         notify = notify_fn or self._noop_notify
 
         # Launch the execution loop as a background task
@@ -125,6 +156,7 @@ class JobExecutor:
         if self._active_task and not self._active_task.done():
             self._active_task.cancel()
 
+        await self._approvals.cancel_pending(active.job_id)
         job = await self._repo.set_status(active.job_id, JobStatus.STOPPED)
         agent_manager.clear_active()
 
@@ -135,6 +167,156 @@ class JobExecutor:
             f"The workspace was preserved for inspection."
         )
         return job
+
+    # ------------------------------------------------------------------
+    # Resume after crash recovery
+    # ------------------------------------------------------------------
+
+    async def resume_job(
+        self, job_id: str, notify_fn: NotifyFn | None = None
+    ) -> Job:
+        """
+        Resume an interrupted (restarted) job on its preserved workspace.
+
+        The stored resume bundle (repo + issue metadata) and the workspace
+        path must both exist; the job must be marked "Interrupted by restart".
+        Raises RuntimeError/ValueError otherwise. The single-active-job rule
+        still applies.
+        """
+        job = await self._repo.get_job(job_id)
+        if job is None:
+            raise ValueError(f"Job {job_id} not found")
+        if not is_resumable(job):
+            raise ValueError(
+                f"Job {job_id} is not resumable — only jobs interrupted by a "
+                "restart or paused due to token limits can be resumed."
+            )
+        if not job.workspace_path or not Path(job.workspace_path).is_dir():
+            raise ValueError(f"Workspace for job {job_id} is missing.")
+
+        state = await self._state_repo.get_state(job_id)
+        if state is None or not state.metadata:
+            raise ValueError(f"Resume metadata for job {job_id} is missing.")
+
+        active = await self._repo.get_active_job()
+        if active:
+            raise RuntimeError(
+                f"Another agent is already running.\n\n"
+                f"Repository: {active.repo_full_name}\n"
+                f"Issue: #{active.issue_number}"
+            )
+
+        repo_info, issue_info = self._restore_bundle(state.metadata)
+        notify = notify_fn or self._noop_notify
+
+        # Reset the row for a fresh run (keeps the same job_id & workspace).
+        await self._repo.update_job(
+            job_id,
+            status=JobStatus.QUEUED,
+            error=None,
+            finished_at=None,
+            current_phase=None,
+        )
+
+        self._active_task = asyncio.create_task(
+            self._run_job(
+                job_id,
+                repo_info,
+                issue_info,
+                job.agent,
+                notify,
+                local_workspace_path=Path(job.workspace_path),
+            ),
+            name=f"job-{job_id}",
+        )
+        self._active_task.add_done_callback(self._on_task_done)
+
+        await notify(
+            f"🔄 Resuming interrupted job {job.job_id}\n\n"
+            f"Repository: {job.repo_full_name}\n"
+            f"Issue: #{job.issue_number}\n"
+            f"Branch: {job.branch}\n"
+            f"Workspace: `{job.workspace_path}`"
+        )
+        return await self._repo.get_job(job_id)  # type: ignore[return-value]
+
+    async def decide_approval(
+        self, approval_id: int, decision: str, decision_by: int
+    ) -> str:
+        """Route an operator Approve/Reject callback into the coordinator."""
+        record = await ApprovalRepository(self._db).get(approval_id)
+        workspace_path = None
+        if record is not None:
+            job = await self._repo.get_job(record.job_id)
+            workspace_path = job.workspace_path if job else None
+        return await self._approvals.decide(
+            approval_id, decision, decision_by, workspace_path
+        )
+
+    async def _persist_start_metadata(
+        self,
+        job_id: str,
+        repo_info: RepoInfo,
+        issue_info: IssueInfo,
+    ) -> None:
+        metadata = {
+            "repo": {
+                "full_name": repo_info.full_name,
+                "name": repo_info.name,
+                "owner": repo_info.owner,
+                "description": repo_info.description,
+                "clone_url": repo_info.clone_url,
+                "ssh_url": repo_info.ssh_url,
+                "default_branch": repo_info.default_branch,
+                "private": repo_info.private,
+                "html_url": repo_info.html_url,
+            },
+            "issue": {
+                "number": issue_info.number,
+                "title": issue_info.title,
+                "body": issue_info.body,
+                "state": issue_info.state,
+                "labels": list(issue_info.labels),
+                "html_url": issue_info.html_url,
+                "repo_full_name": issue_info.repo_full_name,
+            },
+        }
+        await self._state_repo.set_state(job_id, stage="queued", metadata=metadata)
+
+    @staticmethod
+    def _restore_bundle(metadata: dict[str, Any]) -> tuple[RepoInfo, IssueInfo]:
+        repo = metadata.get("repo") or {}
+        issue = metadata.get("issue") or {}
+        repo_info = RepoInfo(
+            full_name=str(repo.get("full_name")),
+            name=str(repo.get("name")),
+            owner=str(repo.get("owner")),
+            description=str(repo.get("description") or ""),
+            clone_url=str(repo.get("clone_url")),
+            ssh_url=str(repo.get("ssh_url") or ""),
+            default_branch=str(repo.get("default_branch")),
+            private=bool(repo.get("private")),
+            html_url=str(repo.get("html_url")),
+        )
+        issue_info = IssueInfo(
+            number=int(issue.get("number") or 0),
+            title=str(issue.get("title") or ""),
+            body=str(issue.get("body") or ""),
+            state=str(issue.get("state") or "open"),
+            labels=list(issue.get("labels") or []),
+            html_url=str(issue.get("html_url") or ""),
+            repo_full_name=str(issue.get("repo_full_name")),
+        )
+        return repo_info, issue_info
+
+    @staticmethod
+    def _approval_keyboard(approval_id: int) -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ موافقة (Approve)", callback_data=f"approve:{approval_id}"),
+                InlineKeyboardButton("❌ رفض (Reject)", callback_data=f"reject:{approval_id}"),
+            ]
+        ])
 
     # ------------------------------------------------------------------
     # Internal orchestration
@@ -151,11 +333,19 @@ class JobExecutor:
     ) -> None:
         """Full end-to-end job execution pipeline."""
         repo = self._repo
+        progress = ProgressReporter(self._db, job_id, notify_fn=notify)
+        classifier = RiskClassifier(settings.protected_paths_list)
+        approval_policy = ApprovalPolicy()
+        router = AgentRouter(self._db)
+        self._router = router
+        verification = VerificationPipeline(self._db)
+        self._verification = verification
 
         async def update(status: str, phase: str | None = None, **kwargs) -> None:
             await repo.set_status(job_id, status, phase)
             if kwargs:
                 await repo.update_job(job_id, **kwargs)
+            await progress.report(f"Stage: {status}", level="INFO", phase=phase or status, notify=False)
 
         owner, repo_name = repo_info.full_name.split("/", 1)
         branch = make_branch_name(issue_info.number)
@@ -201,6 +391,16 @@ class JobExecutor:
                 )
                 await git_service.create_branch(workspace_path, branch)
 
+            # Persist the workspace path so crash-recovery / resume can find it.
+            await repo.update_job(
+                job_id,
+                workspace_path=str(workspace_path),
+                local_workspace=1 if local_workspace_path is not None else 0,
+            )
+            await self._state_repo.set_state(
+                job_id, stage="inspecting", metadata={"workspace_path": str(workspace_path)}
+            )
+
             # --- Phase: INSPECTING ----------------------------------------
             await update(JobStatus.INSPECTING, "Inspecting repository")
             await notify("🔍 Inspecting repository...")
@@ -217,28 +417,50 @@ class JobExecutor:
             await update(JobStatus.IMPLEMENTING, "Running agent")
             await notify("🛠 Running AI agent...")
 
-            agent = agent_manager.get_agent(agent_name)
-
             async def on_agent_progress(msg: str) -> None:
-                await notify(msg)
+                await progress.report(msg, level="INFO", phase="agent", notify=True)
 
             timeout_secs = settings.MAX_AGENT_RUNTIME_MINUTES * 60
             try:
-                result = await asyncio.wait_for(
-                    agent.run(context, workspace_path, on_agent_progress),
-                    timeout=timeout_secs,
+                outcome = await router.run(
+                    job_id=job_id,
+                    primary=agent_name,
+                    context=context,
+                    workspace_path=workspace_path,
+                    agent_factory=agent_manager.get_agent,
+                    timeout_secs=timeout_secs,
+                    on_progress=on_agent_progress,
+                    progress=progress,
                 )
-            except TimeoutError:
-                await update(JobStatus.FAILED, "Timed out", error="Agent exceeded time limit")
-                await notify(
-                    f"⏰ Agent timed out after {settings.MAX_AGENT_RUNTIME_MINUTES} minutes."
-                )
-                return
             except asyncio.CancelledError:
                 logger.info("Job %s was cancelled", job_id)
                 return
 
+            result = outcome.result
             if not result.success:
+                if getattr(result, "token_exhausted", False) or outcome.code == FailureCode.RATE_LIMIT:
+                    err_msg = token_limit_error()
+                    await update(JobStatus.FAILED, "Paused (Token Limit)", error=err_msg)
+                    kb = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("👥 التبديل إلى حساب آخر", callback_data="menu:accounts")],
+                        [InlineKeyboardButton("🔄 استئناف العمل فوراً", callback_data=f"acc_resume:{job_id}")],
+                    ])
+                    await notify(
+                        f"⚠️ *توقف الـ Agent مؤقتاً: نفاد رصيد الـ Tokens!*\n\n"
+                        f"📦 *المستودع:* `{repo_info.full_name}`\n"
+                        f"📌 *المهمة:* #{issue_info.number}\n"
+                        f"🌿 *الفرع:* `{branch}`\n\n"
+                        f"💾 تم حفظ مساحة العمل والتعديلات بأمان.\n"
+                        f"يمكنك التبديل إلى حساب Antigravity آخر عبر قائمة الحسابات ثم استئناف العمل ليكمل الـ Agent من حيث توقف دون إعادة العمل.",
+                        reply_markup=kb,
+                    )
+                    return
+                if outcome.code == FailureCode.TIMEOUT:
+                    await update(JobStatus.FAILED, "Timed out", error="Agent exceeded time limit")
+                    await notify(
+                        f"⏰ Agent timed out after {settings.MAX_AGENT_RUNTIME_MINUTES} minutes."
+                    )
+                    return
                 error_msg = result.error or "Agent returned non-zero exit code"
                 await update(JobStatus.FAILED, "Agent failed", error=error_msg[:500])
                 await notify(
@@ -248,10 +470,9 @@ class JobExecutor:
 
             await notify("✅ Agent completed implementation!")
 
-            # --- Phase: COMMITTING ----------------------------------------
-            await update(JobStatus.COMMITTING, "Committing changes")
-            await notify("📦 Creating commit...")
-
+            # -----------------------------------------------------------
+            # Change detection (before verification — nothing to verify if empty)
+            # -----------------------------------------------------------
             git_status = await git_service.status(workspace_path)
             if not git_status.has_changes:
                 await update(
@@ -267,6 +488,82 @@ class JobExecutor:
             changed_files = git_status.changed_files
             await repo.update_job(job_id, files_changed=len(changed_files))
 
+            # -----------------------------------------------------------
+            # Phase: VERIFYING — controller-enforced checks
+            # -----------------------------------------------------------
+            await update(JobStatus.VERIFYING, "Running verification checks")
+            await notify("🧪 Running controller verification checks...")
+
+            vresult = await verification.run(job_id, workspace_path, progress=progress)
+            await progress.report(vresult.summary(), phase="verification", notify=False)
+            if vresult.blocking:
+                await update(
+                    JobStatus.FAILED,
+                    "Verification failed",
+                    error=f"required check failed:\n{vresult.summary(300)}",
+                )
+                await notify(
+                    f"❌ Verification blocked this job.\n\n{vresult.summary(400)}"
+                )
+                return
+            await notify(f"✅ Verification passed.\n\n{vresult.summary(400)}")
+
+            # -----------------------------------------------------------
+            # Risk classification for the approval gates
+            # -----------------------------------------------------------
+            # Include untracked files: a freshly-created .env or agent.db must
+            # still be classified as HIGH regardless of git tracking state.
+            risk = classifier.classify([*changed_files, *git_status.untracked])
+
+            async def approval_gate(stage: str, gate: str) -> bool:
+                """Request operator approval when the policy requires it."""
+                if not approval_policy.gate_required(gate, risk):
+                    return True
+                record = await self._approvals.request(
+                    job_id, gate, risk, str(workspace_path)
+                )
+                await update(
+                    JobStatus.AWAITING_APPROVAL,
+                    f"Awaiting approval ({gate}, risk {risk})",
+                )
+                await notify(
+                    f"🧑‍💻 *Approval needed — {stage}*\n\n"
+                    f"🆔 Job: `{job_id}`\n"
+                    f"🌿 Branch: `{branch}`\n"
+                    f"⚠️ Risk: `{risk}`\n"
+                    f"📊 Files changed: `{len(changed_files)}`\n\n"
+                    f"Approve to continue or reject to stop.",
+                    reply_markup=self._approval_keyboard(record.id),
+                )
+                outcome = await self._approvals.wait(record.id)
+                if outcome == APPROVED:
+                    await progress.report(
+                        f"Approval granted for {gate}", phase="approval", notify=False
+                    )
+                    return True
+                error_desc = {
+                    "REJECTED": "the approval was rejected",
+                    "STALE": "the approval became stale because the code changed",
+                    "EXPIRED": "the approval request expired",
+                }.get(outcome, "the approval was not granted")
+                await update(
+                    JobStatus.FAILED,
+                    "Approval required",
+                    error=f"{gate}: {error_desc}",
+                )
+                await notify(
+                    f"🚫 Job stopped — {error_desc}.\n\n"
+                    f"The workspace was preserved for inspection."
+                )
+                return False
+
+            if not await approval_gate("before commit", BEFORE_COMMIT):
+                return
+
+            # --- Phase: COMMITTING ----------------------------------------
+            await update(JobStatus.COMMITTING, "Committing changes")
+            await notify("📦 Creating commit...")
+
             commit_msg = make_commit_message(issue_info.title, issue_info.number)
             try:
                 await git_service.commit(workspace_path, commit_msg)
@@ -279,12 +576,16 @@ class JobExecutor:
                 return
 
             # --- Phase: PUSHING -------------------------------------------
+            if not await approval_gate("before push", BEFORE_PUSH):
+                return
             await update(JobStatus.PUSHING, "Pushing branch")
             await notify(f"⬆️ Pushing branch {branch}...")
 
             await git_service.push(workspace_path, branch=branch)
 
             # --- Phase: CREATING_PR ----------------------------------------
+            if not await approval_gate("before pull request", BEFORE_PR):
+                return
             await update(JobStatus.CREATING_PR, "Creating Pull Request")
             await notify("🔀 Creating Pull Request...")
 
@@ -400,6 +701,9 @@ class JobExecutor:
 
         finally:
             agent_manager.clear_active()
+            # Any approval still awaiting a decision belongs to this job
+            # which is now finished — cancel it so stale callbacks are refused.
+            await self._approvals.cancel_pending(job_id)
 
     def _on_task_done(self, task: asyncio.Task) -> None:
         if task.cancelled():

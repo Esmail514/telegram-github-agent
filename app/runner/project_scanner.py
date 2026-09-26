@@ -11,8 +11,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.config.settings import settings
+from app.utils.cache import TTLCache
 
 logger = logging.getLogger(__name__)
+
+# Module-level cache shared across all ProjectScanner instances
+_scan_cache: TTLCache = TTLCache(ttl=60.0)  # 60-second TTL
 
 # Matches GitHub URLs:
 # - git@github.com:owner/repo.git
@@ -146,12 +150,21 @@ class ProjectScanner:
         Scan directory for project folders.
         If directory is None, uses settings.PROJECTS_DIR.
         Returns a sorted list of discovered projects.
+        Results are cached for 60 seconds to avoid repeated filesystem I/O.
         """
         target_dir = Path(directory) if directory else settings.PROJECTS_DIR
         if not target_dir:
             return []
 
         target_path = Path(target_dir).resolve()
+
+        # Check cache first
+        cache_key = str(target_path)
+        cached = _scan_cache.get(cache_key)
+        if cached is not None:
+            logger.debug("ProjectScanner: returning cached results for %s", target_path)
+            return cached
+
         if not target_path.exists() or not target_path.is_dir():
             logger.warning("Projects directory does not exist or is not a dir: %s", target_path)
             return []
@@ -198,7 +211,17 @@ class ProjectScanner:
 
         # Sort: git repos with remotes first, then git repos, then alphabetically
         projects.sort(key=lambda p: (not p.has_github_remote, not p.is_git, p.name.lower()))
+
+        # Store in cache
+        _scan_cache.set(cache_key, projects)
         return projects
+
+    def invalidate_cache(self, directory: Path | str | None = None) -> None:
+        """Invalidate the scan cache for a specific directory (or all)."""
+        if directory is None:
+            _scan_cache.clear()
+        else:
+            _scan_cache.invalidate(str(Path(directory).resolve()))
 
     def get_project_by_name(
         self, name: str, directory: Path | str | None = None

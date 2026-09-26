@@ -72,14 +72,14 @@ class WorkspaceManager:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout_sec
             )
-        except TimeoutError:
+        except TimeoutError as err:
             try:
                 proc.kill()
                 await proc.wait()
             except ProcessLookupError:
                 pass
             logger.error("git clone timed out after %ss: %s", timeout_sec, url)
-            raise TimeoutError(f"git clone timed out after {timeout_sec}s for {url}")
+            raise TimeoutError(f"git clone timed out after {timeout_sec}s for {url}") from err
 
         if proc.returncode != 0:
             err = stderr.decode(errors="replace")

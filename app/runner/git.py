@@ -66,7 +66,7 @@ class GitService:
             stdout_b, stderr_b = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout_sec
             )
-        except TimeoutError:
+        except TimeoutError as err:
             try:
                 proc.kill()
                 await proc.wait()
@@ -75,7 +75,7 @@ class GitService:
             logger.error("Git command timed out after %ss: %s", timeout_sec, " ".join(args))
             raise TimeoutError(
                 f"git command timed out after {timeout_sec}s: {' '.join(args)}"
-            )
+            ) from err
 
         stdout = stdout_b.decode(errors="replace")
         stderr = stderr_b.decode(errors="replace")

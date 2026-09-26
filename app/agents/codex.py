@@ -230,7 +230,7 @@ class CodexAgent(BaseAgent):
             success=True,
             exit_code=0,
             summary=summary,
-            files_modified=modified_paths,
+            files_changed=modified_paths,
             raw_output=content[:500],
         )
 

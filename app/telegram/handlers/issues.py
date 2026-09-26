@@ -34,7 +34,7 @@ async def issues_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await show_project_select_for_issues(update, context, page=0)
         return
     assert update.message
-    await update.message.reply_text("⏳ Fetching repositories...")
+    await update.message.reply_text("⏳ جاري جلب المستودعات من GitHub...")
     await show_repo_select_for_issues(update, context)
 
 
@@ -62,7 +62,11 @@ async def show_project_select_for_issues(
         InlineKeyboardButton("🌐 Browse All GitHub Repos", callback_data="issues_browse_github")
     ])
 
-    text = f"📋 *Browse Issues — Select Project* (page {page + 1})\n\nChoose a project to view its issues:"
+    text = (
+        f"📋 *تصفح الـ Issues — اختر المشروع* (صفحة {page + 1})\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "اختر مشروعاً محلياً لعرض الـ Issues، أو تصفح مستودعات GitHub:"
+    )
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
     elif update.message:
@@ -97,8 +101,8 @@ async def issues_proj_selected_callback(update: Update, context: ContextTypes.DE
 
     if not project or not project.repo_full_name:
         await query.edit_message_text(
-            f"⚠️ Project `{project.name if project else raw_val}` has no GitHub repository linked.\n"
-            f"Cannot fetch issues for this folder.",
+            f"⚠️ المشروع `{project.name if project else raw_val}` غير مرتبط بمستودع GitHub على الإنترنت.\n"
+            f"لا يمكن جلب الـ Issues لهذا المجلد.",
             parse_mode="Markdown"
         )
         return
@@ -128,7 +132,7 @@ async def show_repo_select_for_issues(
         )
     except Exception as exc:
         logger.error("Failed to list repos: %s", exc)
-        msg = "❌ Failed to fetch repositories."
+        msg = "❌ تعذر جلب المستودعات من GitHub."
         if update.callback_query:
             await update.callback_query.edit_message_text(msg)
         elif update.message:
@@ -142,7 +146,11 @@ async def show_repo_select_for_issues(
         page_prefix="issues_repo_page:",
         include_cancel=True,
     )
-    text = "📋 *Select Repository* to view issues"
+    text = (
+        f"📋 *تصفح الـ Issues — اختر المستودع* (صفحة {page + 1})\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "اختر مستودعاً لعرض الـ Issues المفتوحة:"
+    )
     if update.callback_query:
         await update.callback_query.edit_message_text(
             text, reply_markup=keyboard, parse_mode="Markdown"
@@ -194,7 +202,7 @@ async def issue_page_callback(
     page = int((query.data or "").replace(CB_ISSUE_PAGE, ""))
     full_name = (context.user_data or {}).get("selected_repo", "")
     if not full_name:
-        await query.edit_message_text("❌ Repository context lost. Use /issues to start again.")
+        await query.edit_message_text("❌ فُقد سياق المستودع، يرجى كتابة /issues للبدء من جديد.")
         return
     await _show_issues(update, context, full_name, page=page)
 
@@ -212,7 +220,7 @@ async def issue_selected_callback(
     full_name = (context.user_data or {}).get("selected_repo", "")
 
     if not full_name:
-        await query.edit_message_text("❌ Repository context lost. Use /issues to start again.")
+        await query.edit_message_text("❌ فُقد سياق المستودع، يرجى كتابة /issues للبدء من جديد.")
         return
 
     try:
@@ -221,7 +229,7 @@ async def issue_selected_callback(
         )
     except Exception as exc:
         logger.error("Failed to get issue #%d from %s: %s", issue_number, full_name, exc)
-        await query.edit_message_text(f"❌ Could not load issue #{issue_number}.")
+        await query.edit_message_text(f"❌ تعذر تحميل تفاصيل الـ Issue #{issue_number}.")
         return
 
     if context.user_data is not None:
@@ -231,11 +239,12 @@ async def issue_selected_callback(
     body_preview = (issue.body[:400] + "...") if len(issue.body) > 400 else issue.body
 
     text = (
-        f"📌 *Issue #{issue.number}*\n\n"
-        f"*{issue.title}*\n\n"
-        f"*Description:*\n{body_preview or '(empty)'}\n\n"
-        f"*Status:* {issue.state.upper()}\n"
-        f"*Labels:* {labels_str}"
+        f"📌 *Issue #{issue.number} | {issue.state.upper()}*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 *{issue.title}*\n\n"
+        f"📝 *الوصف:*\n{body_preview or '_(لا يوجد وصف)_'}\n\n"
+        f"🏷 *التصنيفات:* {labels_str}\n"
+        "━━━━━━━━━━━━━━━━━━━━"
     )
 
     await query.edit_message_text(
@@ -260,19 +269,23 @@ async def _show_issues(
         )
     except Exception as exc:
         logger.error("Failed to list issues for %s: %s", full_name, exc)
-        msg = f"❌ Could not fetch issues for `{full_name}`."
+        msg = f"❌ تعذر جلب الـ Issues للمستودع `{full_name}`."
         if update.callback_query:
             await update.callback_query.edit_message_text(msg, parse_mode="Markdown")
         return
 
     if not issues:
-        msg = f"📋 No open issues in `{full_name}`." if page == 0 else "📋 No more issues."
+        msg = f"📋 لا توجد Issues مفتوحة في `{full_name}`." if page == 0 else "📋 لا يوجد المزيد من الـ Issues."
         if update.callback_query:
             await update.callback_query.edit_message_text(msg, parse_mode="Markdown")
         return
 
     keyboard = issues_keyboard(issues, full_name, page=page, include_cancel=True)
-    text = f"📋 *Open Issues — {full_name}* (page {page + 1})\n\nSelect an issue:"
+    text = (
+        f"📋 *Issues في `{full_name}`* (صفحة {page + 1})\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "اختر Issue لعرض التفاصيل أو تشغيل الـ Agent:"
+    )
 
     if update.callback_query:
         await update.callback_query.edit_message_text(

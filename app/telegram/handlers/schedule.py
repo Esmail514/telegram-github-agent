@@ -87,7 +87,11 @@ async def _show_repo_select(
         page_prefix="sched_repo_page:",
         include_cancel=True,
     )
-    text = "📅 *جدولة مهمة — اختر المستودع:*"
+    text = (
+        f"📅 *جدولة Issue — اختيار المستودع* (صفحة {page + 1})\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "اختر المستودع الذي يحتوي على الـ Issue المطلوب جدولته:"
+    )
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.edit_message_text(
@@ -236,11 +240,13 @@ async def sched_time_received(
     display = scheduled_dt.strftime("%d/%m/%Y %H:%M UTC")
 
     await update.message.reply_text(
-        f"📅 *تأكيد الجدولة*\n\n"
-        f"📦 المستودع: `{repo}`\n"
-        f"📌 Issue: #{issue}\n"
-        f"🕐 موعد التنفيذ: `{display}`\n\n"
-        f"هل تريد تأكيد الجدولة؟",
+        f"📅 *تأكيد جدولة الـ Issue*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 *المستودع:* `{repo}`\n"
+        f"📌 *الـ Issue:* `#{issue}`\n"
+        f"⏰ *موعد التشغيل:* `{display}`\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "هل تود تأكيد الجدولة؟",
         reply_markup=schedule_confirm_keyboard(),
         parse_mode="Markdown",
     )
@@ -252,8 +258,8 @@ def _parse_user_time(text: str, year: int) -> datetime:
     try:
         dt = datetime.strptime(f"{text.strip()} {year}", "%d/%m %H:%M %Y")
         return dt.replace(tzinfo=UTC)
-    except ValueError:
-        raise ValueError(f"Cannot parse date/time: {text!r}")
+    except ValueError as exc:
+        raise ValueError(f"Cannot parse date/time: {text!r}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -298,13 +304,23 @@ async def sched_confirm_callback(
     )
 
     display = scheduled_dt.strftime("%d/%m/%Y %H:%M UTC")
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    success_kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📅 المهام المجدولة", callback_data="sched_list"),
+            InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="menu:start"),
+        ]
+    ])
     await query.edit_message_text(
-        f"✅ *تمت الجدولة بنجاح!*\n\n"
-        f"📦 المستودع: `{repo_full_name}`\n"
-        f"📌 Issue: #{issue_number}\n"
-        f"🕐 موعد التنفيذ: `{display}`\n"
-        f"🆔 رقم الجدولة: `#{sj.id}`\n\n"
-        f"سيبدأ الـ Agent تلقائياً عند حلول الموعد ✨",
+        f"✅ *تمت الجدولة بنجاح وحفظها في قاعدة البيانات!*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 *المستودع:* `{repo_full_name}`\n"
+        f"📌 *الـ Issue:* `#{issue_number}`\n"
+        f"🕐 *موعد التنفيذ:* `{display}`\n"
+        f"🆔 *رقم الجدولة:* `#{sj.id}`\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "💾 سيبدأ الـ Agent تلقائياً عند حلول الموعد ✨",
+        reply_markup=success_kb,
         parse_mode="Markdown",
     )
     return ConversationHandler.END
@@ -390,6 +406,21 @@ async def sched_delete_callback(
 # Conversation handler builder
 # ---------------------------------------------------------------------------
 
+async def schedule_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if context.user_data:
+        for k in list(context.user_data.keys()):
+            if k.startswith("sched_"):
+                context.user_data.pop(k, None)
+    if update.callback_query:
+        await update.callback_query.answer()
+        from app.telegram.handlers.start import WELCOME
+        from app.telegram.keyboards import main_menu_keyboard
+        await update.callback_query.edit_message_text(
+            WELCOME, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
+        )
+    return ConversationHandler.END
+
+
 def build_schedule_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
@@ -417,6 +448,7 @@ def build_schedule_handler() -> ConversationHandler:
                 lambda u, c: (u.callback_query.answer() or True) and u.callback_query.edit_message_text("❌ Cancelled."),
                 pattern="^cancel$",
             ),
+            CallbackQueryHandler(schedule_to_menu, pattern="^menu:start$"),
             CommandHandler("schedule", schedule_command),
         ],
         per_user=True,

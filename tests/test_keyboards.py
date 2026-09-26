@@ -48,14 +48,24 @@ def _make_mock_issue(number: int = 1, title: str = "Test Issue") -> IssueInfo:
 
 
 def test_main_menu_keyboard():
+    from app.telegram.keyboards import github_menu_keyboard
     kb = main_menu_keyboard()
-    callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
-    assert "menu:projects" in callbacks
-    assert "menu:repos" in callbacks
-    assert "menu:issues" in callbacks
-    assert "menu:run" in callbacks
-    assert "menu:newissue" in callbacks
-    assert "menu:status" in callbacks
+    main_callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    # Top-level items always present
+    assert "menu:projects" in main_callbacks
+    assert "menu:run" in main_callbacks
+    assert "menu:status" in main_callbacks
+    assert "menu:github" in main_callbacks
+    assert "menu:accounts" in main_callbacks
+    assert "menu:sysinfo" in main_callbacks
+    # GitHub items live inside the github submenu, not the main menu
+    assert "menu:repos" not in main_callbacks
+    github_callbacks = [btn.callback_data for row in github_menu_keyboard().inline_keyboard for btn in row]
+    assert "menu:repos" in github_callbacks
+    assert "menu:issues" in github_callbacks
+    assert "menu:prs" in github_callbacks
+    assert "menu:newissue" in github_callbacks
+    assert "menu:schedule" in github_callbacks
 
 
 def test_repos_keyboard_pagination_and_cancel():
