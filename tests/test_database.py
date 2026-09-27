@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.database.repository import Database, JobRepository, JobStatus
+from app.database.repository import Database, JobRepository, JobStatus, SelectedProjectRepository
 
 
 @pytest.fixture
@@ -126,3 +126,27 @@ async def test_list_recent_jobs(temp_db: Database):
 
     recent = await repo.list_recent_jobs(limit=3)
     assert len(recent) == 3
+
+
+@pytest.mark.asyncio
+async def test_selected_project_is_persisted_per_user(temp_db: Database):
+    repo = SelectedProjectRepository(temp_db)
+
+    await repo.save(123, "telegram-bot", "D:/Work/telegram-bot", "owner/telegram-bot")
+
+    selected = await repo.get(123)
+    assert selected is not None
+    assert selected.name == "telegram-bot"
+    assert selected.path == "D:/Work/telegram-bot"
+    assert selected.repo_full_name == "owner/telegram-bot"
+
+
+@pytest.mark.asyncio
+async def test_selected_project_can_be_changed(temp_db: Database):
+    repo = SelectedProjectRepository(temp_db)
+    await repo.save(123, "first", "D:/Work/first", None)
+    await repo.save(123, "second", "D:/Work/second", "owner/second")
+
+    selected = await repo.get(123)
+    assert selected is not None
+    assert selected.name == "second"

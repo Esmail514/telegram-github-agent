@@ -56,15 +56,15 @@ async def show_projects(
 
     if not projects_dir or not projects_dir.exists():
         msg = (
-            "📂 *مجلد المشاريع غير محدد*\n\n"
+            " *مجلد المشاريع غير محدد*\n\n"
             "يرجى تحديد المجلد الذي يحتوي على مشاريعك البرمجية على هذا الجهاز.\n\n"
             "• استخدم الأمر: `/setdir <المسار>`\n"
             "• أو اضغط على الزر أدناه لإدخال المسار."
         )
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⚙️ تعيين المجلد", callback_data=CB_SETDIR)],
-            [InlineKeyboardButton("❌ إلغاء", callback_data=CB_CANCEL)],
+            [InlineKeyboardButton("تعيين المجلد", callback_data=CB_SETDIR)],
+            [InlineKeyboardButton("رجوع", callback_data=CB_CANCEL)],
         ])
         if update.callback_query:
             await update.callback_query.edit_message_text(msg, reply_markup=kb, parse_mode="Markdown")
@@ -78,13 +78,13 @@ async def show_projects(
 
     if not projects:
         msg = (
-            f"📂 *لم يتم العثور على مشاريع* في:\n`{projects_dir}`\n\n"
+            f" *لم يتم العثور على مشاريع* في:\n`{projects_dir}`\n\n"
             "تأكد من وجود مجلدات المشاريع داخل هذا المسار."
         )
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⚙️ تغيير المجلد", callback_data=CB_SETDIR)],
-            [InlineKeyboardButton("🔄 تحديث", callback_data=CB_REFRESH_PROJ)],
+            [InlineKeyboardButton("تغيير المجلد", callback_data=CB_SETDIR)],
+            [InlineKeyboardButton("تحديث", callback_data=CB_REFRESH_PROJ)],
         ])
         if update.callback_query:
             await update.callback_query.edit_message_text(msg, reply_markup=kb, parse_mode="Markdown")
@@ -92,11 +92,18 @@ async def show_projects(
             await update.message.reply_text(msg, reply_markup=kb, parse_mode="Markdown")
         return
 
+    selected_line = ""
+    db = context.bot_data.get("db")
+    if db is not None and update.effective_user is not None:
+        from app.database.repository import SelectedProjectRepository
+
+        selected = await SelectedProjectRepository(db).get(update.effective_user.id)
+        if selected is not None:
+            selected_line = f"\nالمشروع الحالي: `{selected.name}`"
     text = (
-        f"📁 *المشاريع المحلية | Local Projects* (صفحة {page + 1})\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📍 *المجلد:* `{projects_dir}`\n\n"
-        "اختر مشروعاً للمعاينة، أو تصفح الـ Issues، أو تشغيل الـ Agent:"
+        f"*المشاريع المحلية* — صفحة {page + 1}\n"
+        f"المجلد: `{projects_dir}`{selected_line}\n\n"
+        "اختر مشروعًا لحفظه كمشروع حالي."
     )
     keyboard = projects_keyboard(projects, page=page, include_cancel=True)
 
@@ -141,7 +148,7 @@ async def project_selected_callback(update: Update, context: ContextTypes.DEFAUL
         idx = int(idx_str)
         project = projects[idx]
     except (ValueError, IndexError):
-        await query.edit_message_text("❌ لم يتم العثور على المشروع، جاري التحديث...", reply_markup=None)
+        await query.edit_message_text(" لم يتم العثور على المشروع، جاري التحديث...", reply_markup=None)
         await show_projects(update, context, page=0)
         return
 
@@ -153,7 +160,18 @@ async def project_selected_callback(update: Update, context: ContextTypes.DEFAUL
         context.user_data["run_repo"] = project.repo_full_name
         context.user_data["run_local_path"] = str(project.path)
 
-    git_badge = "✅ مستودع Git" if project.is_git else "⚠️ ليس مستودع Git"
+    db = context.bot_data.get("db")
+    if db is not None and update.effective_user is not None:
+        from app.database.repository import SelectedProjectRepository
+
+        await SelectedProjectRepository(db).save(
+            update.effective_user.id,
+            project.name,
+            str(project.path),
+            project.repo_full_name,
+        )
+
+    git_badge = " مستودع Git" if project.is_git else " ليس مستودع Git"
     github_line = (
         f"*GitHub:* `{project.repo_full_name}`"
         if project.repo_full_name
@@ -162,11 +180,11 @@ async def project_selected_callback(update: Update, context: ContextTypes.DEFAUL
     branch_line = f"*الفرع:* `{project.branch}`" if project.branch else ""
 
     text = (
-        f"📁 *المشروع:* `{project.name}`\n\n"
-        f"📍 *المسار:* `{project.path}`\n"
+        f"*تم حفظ المشروع:* `{project.name}`\n\n"
+        f" *المسار:* `{project.path}`\n"
         f"{github_line}\n"
         f"{branch_line}\n"
-        f"⚙️ {git_badge}\n\n"
+        f" {git_badge}\n\n"
         f"اختر الإجراء المطلوب:"
     )
 
@@ -194,10 +212,10 @@ async def setdir_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Otherwise prompt user for path
     await update.message.reply_text(
-        "📁 *تحديد مجلد المشاريع | Projects Directory*\n"
+        " *تحديد مجلد المشاريع | Projects Directory*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "أرسل **المسار الكامل (Absolute Path)** للمجلد الذي يحتوي على مشاريعك البرمجية.\n\n"
-        "💡 *أمثلة:*\n"
+        " *أمثلة:*\n"
         "• Windows: `D:\\Work`\n"
         "• Linux: `/home/user/projects`\n"
         "• macOS: `/Users/user/projects`\n"
@@ -210,18 +228,18 @@ async def setdir_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 @auth_required
 async def setdir_button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Triggered when tapping [⚙️ Set Directory] button."""
+    """Triggered when tapping [ Set Directory] button."""
     query = update.callback_query
     assert query
     await query.answer()
 
     await query.edit_message_text(
-        "📁 *تحديد مجلد المشاريع*\n\n"
+        " *تحديد مجلد المشاريع*\n\n"
         "يرجى كتابة وإرسال **المسار الكامل (Absolute Path)** لمجلد مشاريعك.\n\n"
         "*أمثلة:*\n"
         "• Windows: `D:\\Work`\n"
         "• Linux: `/home/user/projects`\n\n"
-        "أرسل /cancel للإلغاء.",
+        "أرسل /cancel للرجوع.",
         parse_mode="Markdown",
         reply_markup=cancel_keyboard(),
     )
@@ -242,8 +260,8 @@ async def _apply_new_projects_dir(
 
     if not target.exists():
         msg = (
-            f"⚠️ *المسار غير موجود:*\n`{target}`\n\n"
-            f"يرجى التأكد من صحة المسار والمحاولة مرة أخرى، أو إرسال /cancel للإلغاء."
+            f" *المسار غير موجود:*\n`{target}`\n\n"
+            f"يرجى التأكد من صحة المسار والمحاولة مرة أخرى، أو إرسال /cancel للرجوع."
         )
         if update.message:
             await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=cancel_keyboard())
@@ -252,7 +270,7 @@ async def _apply_new_projects_dir(
         return SETDIR_ENTER_PATH
 
     if not target.is_dir():
-        msg = f"⚠️ المسار هو ملف وليس مجلداً: `{target}`\n\nيرجى إرسال مسار مجلد صحيح."
+        msg = f" المسار هو ملف وليس مجلداً: `{target}`\n\nيرجى إرسال مسار مجلد صحيح."
         if update.message:
             await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=cancel_keyboard())
         elif update.callback_query:
@@ -267,8 +285,8 @@ async def _apply_new_projects_dir(
 
     git_count = sum(1 for p in projects if p.is_git)
     confirm_text = (
-        f"✅ *تم تحديث مجلد المشاريع بنجاح!*\n\n"
-        f"📍 `{target.resolve()}`\n\n"
+        f" *تم تحديث مجلد المشاريع بنجاح!*\n\n"
+        f" `{target.resolve()}`\n\n"
         f"تم العثور على **{len(projects)}** مشروع ({git_count} مستودع Git)."
     )
 
@@ -282,7 +300,7 @@ async def _apply_new_projects_dir(
 
 
 async def setdir_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    msg = "❌ تم إلغاء تحديد مجلد المشاريع."
+    msg = " تم رجوع تحديد مجلد المشاريع."
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.edit_message_text(msg)

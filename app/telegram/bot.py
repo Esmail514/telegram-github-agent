@@ -40,6 +40,7 @@ from app.telegram.handlers.issues import (
 from app.telegram.handlers.newissue import build_newissue_handler
 from app.telegram.handlers.polishissue import (
     polish_apply_callback,
+    polish_feedback_received,
     polish_issue_start,
     polish_newissue_start,
     polish_regen_callback,
@@ -52,23 +53,7 @@ from app.telegram.handlers.projects import (
     projects_handler,
     setdir_command,
 )
-from app.telegram.handlers.prs import (
-    merge_pr_execute_callback,
-    merge_pr_start_callback,
-    pr_page_callback,
-    pr_selected_callback,
-    prs_browse_github_callback,
-    prs_for_repo_callback,
-    prs_handler,
-    prs_proj_page_callback,
-    prs_proj_selected_callback,
-    prs_repo_page_callback,
-)
-from app.telegram.handlers.repos import (
-    repo_page_callback,
-    repo_selected_callback,
-    repos_handler,
-)
+from app.telegram.handlers.prs import merge_pr_execute_callback, merge_pr_start_callback
 from app.telegram.handlers.run import build_run_handler
 from app.telegram.handlers.schedule import (
     build_schedule_handler,
@@ -87,6 +72,29 @@ from app.telegram.handlers.status import (
 from app.telegram.handlers.stop import stop_handler
 
 logger = logging.getLogger(__name__)
+
+
+async def _back_to_main_handler(update: object, context: CallbackContext) -> None:
+    query = getattr(update, "callback_query", None)
+    if query is None:
+        return
+    await query.answer()
+    from app.runner.personal_guard import is_personal_mode_active
+    from app.telegram.handlers.start import WELCOME
+    from app.telegram.keyboards import main_menu_keyboard
+
+    personal_active, _ = is_personal_mode_active()
+    await query.edit_message_text(
+        WELCOME,
+        reply_markup=main_menu_keyboard(personal_mode=personal_active),
+        parse_mode="Markdown",
+    )
+
+
+async def _answer_callback(update: object, context: CallbackContext) -> None:
+    query = getattr(update, "callback_query", None)
+    if query is not None:
+        await query.answer()
 
 
 async def _error_handler(update: object, context: CallbackContext) -> None:
@@ -139,9 +147,7 @@ def build_application(token: str) -> Application:
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("projects", projects_handler))
     app.add_handler(CommandHandler("setdir", setdir_command))
-    app.add_handler(CommandHandler("repos", repos_handler))
     app.add_handler(CommandHandler("issues", issues_handler))
-    app.add_handler(CommandHandler("prs", prs_handler))
     app.add_handler(CommandHandler("status", status_handler))
     app.add_handler(CommandHandler("stop", stop_handler))
     app.add_handler(CommandHandler("help", help_handler))
@@ -203,10 +209,6 @@ def build_application(token: str) -> Application:
     app.add_handler(CallbackQueryHandler(project_refresh_callback, pattern="^proj_refresh$"))
     app.add_handler(CallbackQueryHandler(project_selected_callback, pattern="^proj:\\d+$"))
 
-    # Repos
-    app.add_handler(CallbackQueryHandler(repo_page_callback, pattern="^repo_page:"))
-    app.add_handler(CallbackQueryHandler(repo_selected_callback, pattern="^repo:"))
-
     # Issues
     app.add_handler(CallbackQueryHandler(issues_proj_page_callback, pattern="^issues_proj_page:"))
     app.add_handler(CallbackQueryHandler(issues_proj_selected_callback, pattern="^issues_proj:"))
@@ -219,9 +221,7 @@ def build_application(token: str) -> Application:
     # Cancel fallback
     app.add_handler(
         CallbackQueryHandler(
-            lambda u, c: u.callback_query.answer() and u.callback_query.edit_message_text(
-                "❌ Cancelled."
-            ),
+            _back_to_main_handler,
             pattern="^cancel$",
         )
     )
@@ -239,22 +239,18 @@ def build_application(token: str) -> Application:
     app.add_handler(CallbackQueryHandler(polish_newissue_start, pattern="^polish_newissue$"))
     app.add_handler(CallbackQueryHandler(polish_apply_callback, pattern="^polish:apply$"))
     app.add_handler(CallbackQueryHandler(polish_regen_callback, pattern="^polish:regen$"))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, polish_feedback_received),
+    )
 
-    # Pull Requests & Merging
-    app.add_handler(CallbackQueryHandler(prs_proj_page_callback, pattern="^prs_proj_page:"))
-    app.add_handler(CallbackQueryHandler(prs_proj_selected_callback, pattern="^prs_proj:"))
-    app.add_handler(CallbackQueryHandler(prs_browse_github_callback, pattern="^prs_browse_github$"))
-    app.add_handler(CallbackQueryHandler(prs_repo_page_callback, pattern="^prs_repo_page:"))
-    app.add_handler(CallbackQueryHandler(prs_for_repo_callback, pattern="^prs_for:"))
-    app.add_handler(CallbackQueryHandler(pr_page_callback, pattern="^pr_page:"))
-    app.add_handler(CallbackQueryHandler(pr_selected_callback, pattern="^pr:\\d+$"))
     app.add_handler(CallbackQueryHandler(merge_pr_start_callback, pattern="^merge_pr:"))
     app.add_handler(CallbackQueryHandler(merge_pr_execute_callback, pattern="^do_merge:"))
 
     # Schedule: delete a pending job
     app.add_handler(CallbackQueryHandler(sched_delete_callback, pattern="^sched_del:\\d+$"))
+    app.add_handler(CallbackQueryHandler(schedule_list_command, pattern="^sched_list$"))
     # Schedule: noop for info-only buttons
-    app.add_handler(CallbackQueryHandler(lambda u, c: u.callback_query.answer(), pattern="^sched_noop:"))
+    app.add_handler(CallbackQueryHandler(_answer_callback, pattern="^sched_noop:"))
 
     # Antigravity Accounts & Resumption
     app.add_handler(

@@ -107,10 +107,10 @@ class PersonalTaskManager:
             rel = os.path.relpath(root, directory)
             indent = "  " * (rel.count(os.sep) if rel != "." else 0)
             if rel != ".":
-                lines.append(f"{indent}📁 {os.path.basename(root)}/")
+                lines.append(f"{indent} {os.path.basename(root)}/")
             for f in files[:20]:
                 if not f.startswith("."):
-                    lines.append(f"{indent}  📄 {f}")
+                    lines.append(f"{indent}   {f}")
                     count += 1
                     if count >= 60:
                         lines.append(f"{indent}  ... (remaining files truncated)")
@@ -174,7 +174,7 @@ class PersonalTaskManager:
 
         try:
             logger.info("Starting personal task %s with agent %s in %s", task_id, agent.name, target_dir)
-            await progress_cb(f"🚀 بدء مهمة الـ Agent (`{agent.name}`)...\n📁 المجلد: `{target_dir.name}`")
+            await progress_cb(f" بدء مهمة الـ Agent (`{agent.name}`)...\n المجلد: `{target_dir.name}`")
 
             result: AgentResult = await agent.run(context, target_dir, progress_cb)
             duration = asyncio.get_event_loop().time() - start_time

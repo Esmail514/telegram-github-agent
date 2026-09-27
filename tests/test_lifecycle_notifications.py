@@ -78,6 +78,8 @@ async def test_scheduler_recovers_overdue_jobs(temp_db: Database):
         agent="antigravity",
         scheduled_at=past_time,
         chat_id=12345,
+        project_name="test-repo",
+        workspace_path="D:/Work/test-repo",
     )
 
     mock_bot = MagicMock()
@@ -117,6 +119,9 @@ async def test_scheduler_recovers_overdue_jobs(temp_db: Database):
     updated_sj = await repo.get(sj.id)
     assert updated_sj is not None
     assert updated_sj.status == ScheduledJobStatus.LAUNCHED
+    assert mock_executor.start_job.call_args.kwargs["local_workspace_path"] == Path(
+        "D:/Work/test-repo"
+    )
 
     # Verify bot sent the recovery notification mentioning it was recovered
     mock_bot.send_message.assert_called()

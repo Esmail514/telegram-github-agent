@@ -52,7 +52,7 @@ def save_incoming_file(
     if len(content) > max_bytes:
         return (
             False,
-            f"❌ حجم الملف ({round(len(content) / (1024 * 1024), 2)} MB) يتجاوز الحد الأقصى المسموح ({settings.PERSONAL_MAX_UPLOAD_SIZE_MB} MB).",
+            f" حجم الملف ({round(len(content) / (1024 * 1024), 2)} MB) يتجاوز الحد الأقصى المسموح ({settings.PERSONAL_MAX_UPLOAD_SIZE_MB} MB).",
             None,
         )
 
@@ -68,7 +68,7 @@ def save_incoming_file(
         target_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         logger.error("Failed to create target directory %s: %s", target_dir, exc)
-        return False, f"❌ تعذر إنشاء مجلد الحفظ: {exc}", None
+        return False, f" تعذر إنشاء مجلد الحفظ: {exc}", None
 
     target_file = target_dir / safe_name
     # Avoid collision
@@ -85,7 +85,7 @@ def save_incoming_file(
         return True, "تم حفظ الملف بنجاح", target_file
     except OSError as exc:
         logger.error("Failed to write incoming file %s: %s", target_file, exc)
-        return False, f"❌ خطأ أثناء حفظ الملف: {exc}", None
+        return False, f" خطأ أثناء حفظ الملف: {exc}", None
 
 
 def validate_download_path(file_path_str: str | Path) -> tuple[bool, str, Path | None]:
@@ -109,31 +109,31 @@ def validate_download_path(file_path_str: str | Path) -> tuple[bool, str, Path |
         path = path.resolve()
 
     if not path.exists():
-        return False, f"❌ الملف غير موجود: `{path}`", None
+        return False, f" الملف غير موجود: `{path}`", None
 
     if not path.is_file():
-        return False, f"⚠️ المسار المحدد ليس ملفاً: `{path}`", None
+        return False, f" المسار المحدد ليس ملفاً: `{path}`", None
 
     # Check allowed dirs restriction
     if not _is_dir_allowed(path):
-        return False, f"🚫 الوصول للمسار `{path}` غير مسموح به حسب إعدادات الأمان.", None
+        return False, f" الوصول للمسار `{path}` غير مسموح به حسب إعدادات الأمان.", None
 
     # Check sensitive files blocklist
     if _is_sensitive_file(path.name):
-        return False, f"🔒 محظور: الملف `{path.name}` مصنف كملف حساس ومحمي من التحميل.", None
+        return False, f" محظور: الملف `{path.name}` مصنف كملف حساس ومحمي من التحميل.", None
 
     # Check file size
     try:
         size = path.stat().st_size
     except OSError as exc:
-        return False, f"❌ تعذر قراءة بيانات الملف: {exc}", None
+        return False, f" تعذر قراءة بيانات الملف: {exc}", None
 
     max_bytes = settings.PERSONAL_MAX_DOWNLOAD_SIZE_MB * 1024 * 1024
     if size > max_bytes:
         size_mb = round(size / (1024 * 1024), 2)
         return (
             False,
-            f"⚠️ حجم الملف ({size_mb} MB) أكبر من الحد الأقصى المسموح للتحميل ({settings.PERSONAL_MAX_DOWNLOAD_SIZE_MB} MB).",
+            f" حجم الملف ({size_mb} MB) أكبر من الحد الأقصى المسموح للتحميل ({settings.PERSONAL_MAX_DOWNLOAD_SIZE_MB} MB).",
             None,
         )
 

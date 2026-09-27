@@ -7,7 +7,7 @@ from a trusted policy (env-configured JSON, or the built-in default); commands
 are NEVER read from untrusted repository files.
 
 Every check:
-- runs as a subprocess with an explicit timeout (terminate → kill fallback),
+- runs as a subprocess with an explicit timeout (terminate  kill fallback),
 - captures and sanitises (secret-redacted + truncated) output,
 - persists a structured result in `verification_results`,
 - and blocks commit/push/PR when a required check fails.
@@ -77,14 +77,14 @@ class VerificationResult:
         parts = [f"Verification: {len(self.checks)} check(s) run"]
         for c in self.checks:
             icon = {
-                VerificationCheckStatus.PASS: "✅",
-                VerificationCheckStatus.FAIL: "❌",
-                VerificationCheckStatus.TIMED_OUT: "⏰",
-                VerificationCheckStatus.ERROR: "⚠️",
-                VerificationCheckStatus.NOT_RUN: "⏭️",
-            }.get(c.status, "❓")
+                VerificationCheckStatus.PASS: "",
+                VerificationCheckStatus.FAIL: "",
+                VerificationCheckStatus.TIMED_OUT: "",
+                VerificationCheckStatus.ERROR: "",
+                VerificationCheckStatus.NOT_RUN: "",
+            }.get(c.status, "")
             required = " (required)" if c.required else ""
-            parts.append(f"{icon} `{c.name}` → `{c.status}`{required}")
+            parts.append(f"{icon} `{c.name}`  `{c.status}`{required}")
         text = "\n".join(parts)
         return text[:limit]
 
@@ -203,7 +203,7 @@ class VerificationPipeline:
 
             if progress is not None:
                 await progress.report(
-                    f"🔎 Running verification check `{check.name}`...",
+                    f" Running verification check `{check.name}`...",
                     phase=f"verify:{check.name}",
                 )
             result = await self._run_check(workspace_path, check, idx)
@@ -263,7 +263,7 @@ class VerificationPipeline:
         duration_ms = _elapsed_ms(started, finished)
         stdout = stdout_b[:_MAX_CAPTURE_BYTES].decode(errors="replace")
         stderr = stderr_b[:_MAX_CAPTURE_BYTES].decode(errors="replace")
-        output = _redact((stdout + "\n" + stderr).strip() or "✔ (no output)")
+        output = _redact((stdout + "\n" + stderr).strip() or " (no output)")
 
         if proc.returncode == 0:
             status = VerificationCheckStatus.PASS

@@ -56,7 +56,7 @@ class LocalProject:
     @property
     def display_label(self) -> str:
         """Formatted label for keyboards and messages."""
-        icon = "🐙" if self.has_github_remote else "📁"
+        icon = "" if self.has_github_remote else ""
         return f"{icon} {self.name}"
 
 

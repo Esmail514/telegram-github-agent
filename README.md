@@ -58,6 +58,16 @@ You should see:
 py -m app.main
 ```
 
+During development, start with automatic reload enabled:
+
+```bash
+py -m app.main --reload
+```
+
+The bot watches Python source and runtime configuration files, waits for file
+writes to settle, then shuts down cleanly and restarts itself. If an AI job is
+active, the reload is deferred until that job finishes so work is not interrupted.
+
 ---
 
 ## 📱 Usage

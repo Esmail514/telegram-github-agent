@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -76,19 +77,19 @@ class JobScheduler:
                 # Notify the user
                 if bot:
                     if is_recovered:
-                        header = "⏰ *استئناف مهمة مجدولة*\n⚠️ _فات موعدها أثناء إيقاف البوت وتم استئنافها الآن_"
+                        header = " *استئناف مهمة مجدولة*\n _فات موعدها أثناء إيقاف البوت وتم استئنافها الآن_"
                     else:
-                        header = "⏰ *بدء تنفيذ مهمة مجدولة*"
+                        header = " *بدء تنفيذ مهمة مجدولة*"
 
                     msg_text = (
                         f"{header}\n"
                         "━━━━━━━━━━━━━━━━━━━━\n"
-                        f"📦 *المستودع:* `{sj.repo_full_name}`\n"
-                        f"📌 *الـ Issue:* `#{sj.issue_number}`\n"
-                        f"🤖 *الـ Agent:* `{sj.agent}`\n"
-                        f"🆔 *رقم الجدولة:* `#{sj.id}`\n"
+                        f" *المستودع:* `{sj.repo_full_name}`\n"
+                        f" *الـ Issue:* `#{sj.issue_number}`\n"
+                        f" *الـ Agent:* `{sj.agent}`\n"
+                        f" *رقم الجدولة:* `#{sj.id}`\n"
                         "━━━━━━━━━━━━━━━━━━━━\n"
-                        "🚀 يبدأ الـ Agent الآن التحليل والحل تلقائياً..."
+                        " يبدأ الـ Agent الآن التحليل والحل تلقائياً..."
                     )
                     try:
                         await bot.send_message(
@@ -123,6 +124,7 @@ class JobScheduler:
                     issue_info=issue_info,
                     telegram_chat_id=sj.chat_id,
                     agent_name=sj.agent,
+                    local_workspace_path=Path(sj.workspace_path) if sj.workspace_path else None,
                     notify_fn=_notify,
                 )
 
@@ -134,8 +136,8 @@ class JobScheduler:
                         await bot.send_message(
                             chat_id=sj.chat_id,
                             text=(
-                                f"⚠️ *Scheduled Job Skipped*\n\n"
-                                f"📦 `{sj.repo_full_name}` Issue #{sj.issue_number}\n\n"
+                                f" *Scheduled Job Skipped*\n\n"
+                                f" `{sj.repo_full_name}` Issue #{sj.issue_number}\n\n"
                                 f"Reason: {exc}"
                             ),
                             parse_mode="Markdown",

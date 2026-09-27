@@ -210,7 +210,7 @@ class AgentRouter:
             attempt_id = await self._repo.start_attempt(job_id, index + 1, name, "cli")
             if progress is not None:
                 await progress.report(
-                    f"🤖 Running agent `{name}` (attempt {index + 1}/{len(candidates)})...",
+                    f" Running agent `{name}` (attempt {index + 1}/{len(candidates)})...",
                     phase="implementing",
                 )
 
@@ -297,7 +297,7 @@ class AgentRouter:
         progress: ProgressReporter | None,
     ) -> None:
         msg = (
-            f"↩️ Agent `{from_agent}` failed with retryable infra failure "
+            f" Agent `{from_agent}` failed with retryable infra failure "
             f"`{code}` — falling back to `{to_agent}`."
         )
         logger.warning(msg)

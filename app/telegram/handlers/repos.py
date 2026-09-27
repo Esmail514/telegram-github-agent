@@ -20,7 +20,7 @@ _REPOS_PER_PAGE = 8
 @auth_required
 async def repos_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message
-    await update.message.reply_text("⏳ جاري جلب المستودعات من GitHub...")
+    await update.message.reply_text(" جاري جلب المستودعات من GitHub...")
     await show_repos(update, context, page=0)
 
 
@@ -34,7 +34,7 @@ async def show_repos(
         repos = await _fetch_repos(page)
     except Exception as exc:
         logger.error("Failed to list repos: %s", exc)
-        msg = "❌ تعذر جلب المستودعات. يرجى التحقق من بيانات الربط مع GitHub."
+        msg = " تعذر جلب المستودعات. يرجى التحقق من بيانات الربط مع GitHub."
         if update.callback_query:
             await update.callback_query.edit_message_text(msg)
         elif update.message:
@@ -42,7 +42,7 @@ async def show_repos(
         return
 
     if not repos:
-        msg = "📦 لم يتم العثور على أي مستودعات." if page == 0 else "📦 لا يوجد المزيد من المستودعات."
+        msg = " لم يتم العثور على أي مستودعات." if page == 0 else " لا يوجد المزيد من المستودعات."
         if update.callback_query:
             await update.callback_query.edit_message_text(msg)
         elif update.message:
@@ -51,7 +51,7 @@ async def show_repos(
 
     keyboard = repos_keyboard(repos, page=page, include_cancel=True)
     text = (
-        f"📦 *مستودعات GitHub | Repositories* (صفحة {page + 1})\n"
+        f" *مستودعات GitHub | Repositories* (صفحة {page + 1})\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "اختر مستودعاً من القائمة أدناه لعرض تفاصيله أو تشغيل الـ Agent:"
     )
@@ -89,34 +89,34 @@ async def repo_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     try:
         repo = github_client.get_repo_info(full_name)
         text = (
-            f"📦 *{repo.name}*\n"
+            f" *{repo.name}*\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔗 `{repo.full_name}`\n"
-            f"📝 {repo.description or '_(لا يوجد وصف)_'}\n\n"
-            f"🌿 *الفرع الافتراضي:* `{repo.default_branch}`\n"
-            f"🔐 *النوع:* {'🔒 خاص (Private)' if repo.private else '🌐 عام (Public)'}\n"
+            f" `{repo.full_name}`\n"
+            f" {repo.description or '_(لا يوجد وصف)_'}\n\n"
+            f" *الفرع الافتراضي:* `{repo.default_branch}`\n"
+            f" *النوع:* {' خاص (Private)' if repo.private else ' عام (Public)'}\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "اختر الإجراء المطلوب:"
         )
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("📋 عرض الـ Issues", callback_data=f"issues_for:{full_name}"),
-                InlineKeyboardButton("➕ Issue جديد", callback_data=f"newissue_for:{full_name}"),
+                InlineKeyboardButton("عرض الـ Issues", callback_data=f"issues_for:{full_name}"),
+                InlineKeyboardButton("Issue جديد", callback_data=f"newissue_for:{full_name}"),
             ],
             [
-                InlineKeyboardButton("🚀 تشغيل الـ Agent", callback_data=f"run_for:{full_name}"),
-                InlineKeyboardButton("🔀 الـ Pull Requests", callback_data=f"prs_for:{full_name}"),
+                InlineKeyboardButton("تشغيل الـ Agent", callback_data=f"run_for:{full_name}"),
+                InlineKeyboardButton("الـ Pull Requests", callback_data=f"prs_for:{full_name}"),
             ],
             [
-                InlineKeyboardButton("◀ رجوع للمستودعات", callback_data="menu:repos"),
-                InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="menu:start"),
+                InlineKeyboardButton("رجوع للمستودعات", callback_data="menu:repos"),
+                InlineKeyboardButton("القائمة الرئيسية", callback_data="menu:start"),
             ],
         ])
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
     except Exception as exc:
         logger.error("Failed to get repo info for %s: %s", full_name, exc)
-        await query.edit_message_text(f"❌ تعذر تحميل بيانات المستودع: `{full_name}`", parse_mode="Markdown")
+        await query.edit_message_text(f" تعذر تحميل بيانات المستودع: `{full_name}`", parse_mode="Markdown")
 
 
 async def _fetch_repos(page: int) -> list[RepoInfo]:

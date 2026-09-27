@@ -10,16 +10,7 @@ from app.runner.personal_guard import is_personal_mode_active
 from app.telegram.auth import auth_required
 from app.telegram.keyboards import github_menu_keyboard, main_menu_keyboard
 
-WELCOME = (
-    "⚡️ *Antigravity Coding Assistant*\n"
-    "━━━━━━━━━━━━━━━━━━━━\n"
-    "مرحباً! اختر ما تريد من القائمة:\n\n"
-    "🚀 *Agent* — تشغيل ومتابعة حالة المهام\n"
-    "🐙 *GitHub* — المستودعات، Issues، PRs، جدولة\n"
-    "📁 *المشاريع* — مشاريعك البرمجية المحلية\n"
-    "👥 *الحسابات* — التبديل بين حسابات Antigravity\n"
-    "🖥️ *موارد الجهاز* — استهلاك الـ RAM والـ CPU والقرص"
-)
+WELCOME = "*مساعد البرمجة*\nاختر الإجراء المطلوب."
 
 
 @auth_required
@@ -44,9 +35,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     if data == "menu:github":
         await query.edit_message_text(
-            "🐙 *قائمة GitHub*\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "اختر الإجراء المطلوب:",
+            "*GitHub*\nاختر الإجراء المطلوب.",
             reply_markup=github_menu_keyboard(),
             parse_mode="Markdown",
         )

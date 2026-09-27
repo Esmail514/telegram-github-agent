@@ -2,8 +2,8 @@
 /schedule handler — schedule a GitHub Issue to be executed by an agent at a future time.
 
 Flow:
-    /schedule → Select Repo → Select Issue → Enter date/time → Confirm → Done
-    /schedule list → Show all scheduled jobs (with delete buttons)
+    /schedule  Select Repo  Select Issue  Enter date/time  Confirm  Done
+    /schedule list  Show all scheduled jobs (with delete buttons)
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -21,17 +21,21 @@ from telegram.ext import (
     filters,
 )
 
+from app.config.settings import settings
 from app.github.client import github_client
 from app.github.issues import issue_service
+from app.runner.project_scanner import project_scanner
 from app.telegram.auth import auth_required
 from app.telegram.keyboards import (
     CB_SCHEDULE_DEL,
     cancel_keyboard,
     issues_keyboard,
+    projects_keyboard,
     repos_keyboard,
     schedule_confirm_keyboard,
     scheduled_jobs_keyboard,
 )
+from app.telegram.repository_search import filter_repositories
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +43,11 @@ logger = logging.getLogger(__name__)
 (
     SCHED_SELECT_REPO,
     SCHED_SELECT_ISSUE,
+    SCHED_SELECT_PROJECT,
     SCHED_ENTER_TIME,
     SCHED_CONFIRM,
-) = range(20, 24)
+    SCHED_SEARCH_REPO,
+) = range(20, 26)
 
 _ISSUES_PER_PAGE = 10
 _DATE_FORMAT_HINT = "أدخل موعد التنفيذ بالصيغة:\n`DD/MM HH:MM`\nمثال: `23/09 14:00` (التوقيت UTC)"
@@ -55,7 +61,7 @@ _DATE_FORMAT_HINT = "أدخل موعد التنفيذ بالصيغة:\n`DD/MM HH
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry: /schedule — show repo selector."""
     assert update.message
-    await update.message.reply_text("⏳ جاري تحميل المستودعات...")
+    await update.message.reply_text(" جاري تحميل المستودعات...")
     return await _show_repo_select(update, context)
 
 
@@ -73,7 +79,7 @@ async def _show_repo_select(
         )
     except Exception as exc:
         logger.error("Failed to list repos for schedule: %s", exc)
-        msg = "❌ تعذّر تحميل المستودعات."
+        msg = " تعذّر تحميل المستودعات."
         if update.callback_query:
             await update.callback_query.edit_message_text(msg)
         elif update.message:
@@ -87,8 +93,12 @@ async def _show_repo_select(
         page_prefix="sched_repo_page:",
         include_cancel=True,
     )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("بحث عن مستودع", callback_data="sched_repo_search")],
+        *keyboard.inline_keyboard,
+    ])
     text = (
-        f"📅 *جدولة Issue — اختيار المستودع* (صفحة {page + 1})\n"
+        f" *جدولة Issue — اختيار المستودع* (صفحة {page + 1})\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "اختر المستودع الذي يحتوي على الـ Issue المطلوب جدولته:"
     )
@@ -102,8 +112,61 @@ async def _show_repo_select(
     return SCHED_SELECT_REPO
 
 
+@auth_required
+async def sched_repo_search_start(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    assert query
+    await query.answer()
+    await query.edit_message_text(
+        "أرسل حرفًا أو جزءًا من اسم المستودع.",
+        reply_markup=cancel_keyboard(),
+    )
+    return SCHED_SEARCH_REPO
+
+
+@auth_required
+async def sched_repo_search_received(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    assert update.message
+    search_text = (update.message.text or "").strip()
+    if not search_text:
+        await update.message.reply_text("أرسل حرفًا واحدًا على الأقل.")
+        return SCHED_SEARCH_REPO
+
+    try:
+        repos = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: github_client.list_repos(page=0, per_page=100)
+        )
+    except Exception as exc:
+        logger.error("Failed to search repositories: %s", exc)
+        await update.message.reply_text("تعذر البحث في المستودعات.")
+        return SCHED_SEARCH_REPO
+
+    matches = filter_repositories(repos, search_text)
+    if not matches:
+        await update.message.reply_text(
+            "لم يتم العثور على مستودع. أرسل بحثًا آخر.",
+            reply_markup=cancel_keyboard(),
+        )
+        return SCHED_SEARCH_REPO
+
+    await update.message.reply_text(
+        f"نتائج البحث عن: {search_text}",
+        reply_markup=repos_keyboard(
+            matches,
+            callback_prefix="sched_repo:",
+            page_prefix="sched_repo_page:",
+            include_cancel=True,
+        ),
+    )
+    return SCHED_SEARCH_REPO
+
+
 # ---------------------------------------------------------------------------
-# Repo selected → show issues
+# Repo selected  show issues
 # ---------------------------------------------------------------------------
 
 @auth_required
@@ -146,11 +209,11 @@ async def _show_issue_select(
     except Exception as exc:
         logger.error("Failed to list issues for schedule: %s", exc)
         if update.callback_query:
-            await update.callback_query.edit_message_text("❌ تعذّر تحميل الـ Issues.")
+            await update.callback_query.edit_message_text(" تعذّر تحميل الـ Issues.")
         return ConversationHandler.END
 
     if not issues:
-        msg = f"📋 لا توجد Issues مفتوحة في `{full_name}`."
+        msg = f" لا توجد Issues مفتوحة في `{full_name}`."
         if update.callback_query:
             await update.callback_query.edit_message_text(msg, parse_mode="Markdown")
         return ConversationHandler.END
@@ -160,7 +223,7 @@ async def _show_issue_select(
         callback_prefix="sched_issue:",
         page_prefix="sched_issue_page:",
     )
-    text = f"📅 *جدولة مهمة — اختر Issue من {full_name}:*"
+    text = f" *جدولة مهمة — اختر Issue من {full_name}:*"
     if update.callback_query:
         await update.callback_query.edit_message_text(
             text, reply_markup=keyboard, parse_mode="Markdown"
@@ -194,11 +257,88 @@ async def sched_issue_selected_callback(
     if context.user_data is not None:
         context.user_data["sched_issue"] = issue_number
 
+    return await _show_schedule_projects(update, context)
+
+
+async def _show_schedule_projects(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0
+) -> int:
+    query = update.callback_query
+    assert query
+    if not settings.PROJECTS_DIR or not settings.PROJECTS_DIR.exists():
+        await query.edit_message_text(
+            "حدد مجلد المشاريع أولًا من /setdir ثم أعد الجدولة.",
+            reply_markup=cancel_keyboard(),
+        )
+        return ConversationHandler.END
+
+    projects = project_scanner.scan(settings.PROJECTS_DIR)
+    if context.user_data is not None:
+        context.user_data["sched_projects"] = projects
+    if not projects:
+        await query.edit_message_text("لا توجد مشاريع محلية متاحة.")
+        return ConversationHandler.END
+
     await query.edit_message_text(
-        f"📅 *جدولة Issue #{issue_number}*\n\n"
-        f"{_DATE_FORMAT_HINT}\n\n"
-        f"📌 السنة الحالية تُستخدم تلقائياً.\n"
-        f"مثال للغد: `23/09 09:00`",
+        "اختر المشروع المحلي الذي ستنفذ فيه المهمة.",
+        reply_markup=projects_keyboard(
+            projects,
+            page=page,
+            callback_prefix="sched_project:",
+            page_prefix="sched_project_page:",
+            include_cancel=True,
+            include_setdir=False,
+        ),
+    )
+    return SCHED_SELECT_PROJECT
+
+
+@auth_required
+async def sched_project_page_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    assert query
+    await query.answer()
+    page = int((query.data or "").replace("sched_project_page:", ""))
+    return await _show_schedule_projects(update, context, page=page)
+
+
+@auth_required
+async def sched_project_selected_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    query = update.callback_query
+    assert query
+    await query.answer()
+    projects = (context.user_data or {}).get("sched_projects", [])
+    try:
+        index = int((query.data or "").replace("sched_project:", ""))
+        project = projects[index]
+    except (ValueError, IndexError):
+        await query.edit_message_text("تعذر العثور على المشروع المحلي.")
+        return ConversationHandler.END
+
+    if context.user_data is not None:
+        context.user_data["sched_project_name"] = project.name
+        context.user_data["sched_project_path"] = str(project.path)
+
+    db = context.bot_data.get("db")
+    if db is not None and update.effective_user is not None:
+        from app.database.repository import SelectedProjectRepository
+
+        await SelectedProjectRepository(db).save(
+            update.effective_user.id,
+            project.name,
+            str(project.path),
+            project.repo_full_name,
+        )
+
+    issue_number = (context.user_data or {}).get("sched_issue", "")
+    await query.edit_message_text(
+        f"جدولة Issue #{issue_number}\n"
+        f"المشروع: `{project.name}`\n\n"
+        f"{_DATE_FORMAT_HINT}",
         reply_markup=cancel_keyboard(),
         parse_mode="Markdown",
     )
@@ -221,14 +361,14 @@ async def sched_time_received(
         scheduled_dt = _parse_user_time(text, now_utc.year)
     except ValueError:
         await update.message.reply_text(
-            f"⚠️ صيغة غير صحيحة.\n\n{_DATE_FORMAT_HINT}",
+            f" صيغة غير صحيحة.\n\n{_DATE_FORMAT_HINT}",
             parse_mode="Markdown",
         )
         return SCHED_ENTER_TIME
 
     if scheduled_dt <= now_utc:
         await update.message.reply_text(
-            "⚠️ الموعد المدخل في الماضي. أدخل موعداً مستقبلياً.",
+            " الموعد المدخل في الماضي. أدخل موعداً مستقبلياً.",
         )
         return SCHED_ENTER_TIME
 
@@ -237,14 +377,16 @@ async def sched_time_received(
 
     repo = (context.user_data or {}).get("sched_repo", "?")
     issue = (context.user_data or {}).get("sched_issue", "?")
+    project_name = (context.user_data or {}).get("sched_project_name", "?")
     display = scheduled_dt.strftime("%d/%m/%Y %H:%M UTC")
 
     await update.message.reply_text(
-        f"📅 *تأكيد جدولة الـ Issue*\n"
+        f" *تأكيد جدولة الـ Issue*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 *المستودع:* `{repo}`\n"
-        f"📌 *الـ Issue:* `#{issue}`\n"
-        f"⏰ *موعد التشغيل:* `{display}`\n"
+        f" *المستودع:* `{repo}`\n"
+        f" *الـ Issue:* `#{issue}`\n"
+        f" *المشروع:* `{project_name}`\n"
+        f" *موعد التشغيل:* `{display}`\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "هل تود تأكيد الجدولة؟",
         reply_markup=schedule_confirm_keyboard(),
@@ -263,7 +405,7 @@ def _parse_user_time(text: str, year: int) -> datetime:
 
 
 # ---------------------------------------------------------------------------
-# Confirm → save to DB
+# Confirm  save to DB
 # ---------------------------------------------------------------------------
 
 @auth_required
@@ -278,9 +420,11 @@ async def sched_confirm_callback(
     repo_full_name = ud.get("sched_repo", "")
     issue_number = ud.get("sched_issue")
     dt_iso = ud.get("sched_dt")
+    project_name = ud.get("sched_project_name")
+    project_path = ud.get("sched_project_path")
 
-    if not repo_full_name or issue_number is None or not dt_iso:
-        await query.edit_message_text("❌ بيانات ناقصة. ابدأ من /schedule مجدداً.")
+    if not repo_full_name or issue_number is None or not dt_iso or not project_path:
+        await query.edit_message_text(" بيانات ناقصة. ابدأ من /schedule مجدداً.")
         return ConversationHandler.END
 
     scheduled_dt = datetime.fromisoformat(dt_iso)
@@ -290,7 +434,7 @@ async def sched_confirm_callback(
 
     db = context.bot_data.get("db")
     if db is None:
-        await query.edit_message_text("❌ قاعدة البيانات غير متاحة.")
+        await query.edit_message_text(" قاعدة البيانات غير متاحة.")
         return ConversationHandler.END
 
     from app.database.schedule_repository import ScheduleRepository
@@ -301,25 +445,28 @@ async def sched_confirm_callback(
         agent=agent,
         scheduled_at=scheduled_dt,
         chat_id=chat_id,
+        project_name=project_name,
+        workspace_path=project_path,
     )
 
     display = scheduled_dt.strftime("%d/%m/%Y %H:%M UTC")
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     success_kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📅 المهام المجدولة", callback_data="sched_list"),
-            InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="menu:start"),
+            InlineKeyboardButton("المهام المجدولة", callback_data="sched_list"),
+            InlineKeyboardButton("القائمة الرئيسية", callback_data="menu:start"),
         ]
     ])
     await query.edit_message_text(
-        f"✅ *تمت الجدولة بنجاح وحفظها في قاعدة البيانات!*\n"
+        f" *تمت الجدولة بنجاح وحفظها في قاعدة البيانات!*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 *المستودع:* `{repo_full_name}`\n"
-        f"📌 *الـ Issue:* `#{issue_number}`\n"
-        f"🕐 *موعد التنفيذ:* `{display}`\n"
-        f"🆔 *رقم الجدولة:* `#{sj.id}`\n"
+        f" *المستودع:* `{repo_full_name}`\n"
+        f" *الـ Issue:* `#{issue_number}`\n"
+        f" *المشروع:* `{project_name}`\n"
+        f" *موعد التنفيذ:* `{display}`\n"
+        f" *رقم الجدولة:* `#{sj.id}`\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "💾 سيبدأ الـ Agent تلقائياً عند حلول الموعد ✨",
+        " سيبدأ الـ Agent تلقائياً عند حلول الموعد ",
         reply_markup=success_kb,
         parse_mode="Markdown",
     )
@@ -337,9 +484,12 @@ async def schedule_list_command(
     """Show all scheduled jobs for this chat."""
     db = context.bot_data.get("db")
     if db is None:
-        msg = "❌ قاعدة البيانات غير متاحة."
-        assert update.message
-        await update.message.reply_text(msg)
+        msg = " قاعدة البيانات غير متاحة."
+        if update.callback_query:
+            await update.callback_query.answer()
+            await update.callback_query.edit_message_text(msg)
+        elif update.message:
+            await update.message.reply_text(msg)
         return
 
     from app.database.schedule_repository import ScheduleRepository
@@ -348,21 +498,27 @@ async def schedule_list_command(
     jobs = await sched_repo.list_all(chat_id=chat_id)
 
     if not jobs:
-        assert update.message
-        await update.message.reply_text(
-            "📅 لا توجد مهام مجدولة حالياً.\n\nاستخدم /schedule لإضافة مهمة جديدة."
-        )
+        text = "لا توجد مهام مجدولة حاليًا."
+        if update.callback_query:
+            await update.callback_query.answer()
+            await update.callback_query.edit_message_text(
+                text, reply_markup=cancel_keyboard()
+            )
+        elif update.message:
+            await update.message.reply_text(text, reply_markup=cancel_keyboard())
         return
 
     keyboard = scheduled_jobs_keyboard(jobs)
-    assert update.message
-    await update.message.reply_text(
-        f"📅 *المهام المجدولة* ({len(jobs)} مهمة):\n\n"
-        "⏳ = قيد الانتظار  |  ✅ = تم التشغيل\n"
-        "اضغط 🗑 لحذف مهمة معلقة.",
-        reply_markup=keyboard,
-        parse_mode="Markdown",
-    )
+    text = f"*المهام المجدولة* ({len(jobs)})\nيمكن حذف أي مهمة لم تبدأ بعد."
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            text, reply_markup=keyboard, parse_mode="Markdown"
+        )
+    elif update.message:
+        await update.message.reply_text(
+            text, reply_markup=keyboard, parse_mode="Markdown"
+        )
 
 
 @auth_required
@@ -379,7 +535,7 @@ async def sched_delete_callback(
 
     db = context.bot_data.get("db")
     if db is None:
-        await query.edit_message_text("❌ قاعدة البيانات غير متاحة.")
+        await query.edit_message_text(" قاعدة البيانات غير متاحة.")
         return
 
     from app.database.schedule_repository import ScheduleRepository
@@ -387,16 +543,16 @@ async def sched_delete_callback(
     cancelled = await sched_repo.cancel(job_id)
 
     if cancelled:
-        await query.answer(f"✅ تم حذف المهمة #{job_id}", show_alert=True)
+        await query.answer(f" تم حذف المهمة #{job_id}", show_alert=True)
     else:
-        await query.answer("⚠️ لا يمكن حذف هذه المهمة (ربما تم تشغيلها بالفعل).", show_alert=True)
+        await query.answer(" لا يمكن حذف هذه المهمة (ربما تم تشغيلها بالفعل).", show_alert=True)
 
     # Refresh the list
     chat_id = query.message.chat_id  # type: ignore[union-attr]
     jobs = await sched_repo.list_all(chat_id=chat_id)
     if not jobs:
         await query.edit_message_text(
-            "📅 لا توجد مهام مجدولة حالياً.\n\nاستخدم /schedule لإضافة مهمة جديدة."
+            " لا توجد مهام مجدولة حالياً.\n\nاستخدم /schedule لإضافة مهمة جديدة."
         )
         return
     await query.edit_message_reply_markup(reply_markup=scheduled_jobs_keyboard(jobs))
@@ -429,12 +585,25 @@ def build_schedule_handler() -> ConversationHandler:
         ],
         states={
             SCHED_SELECT_REPO: [
+                CallbackQueryHandler(sched_repo_search_start, pattern="^sched_repo_search$"),
                 CallbackQueryHandler(sched_repo_page_callback, pattern="^sched_repo_page:"),
+                CallbackQueryHandler(sched_repo_selected_callback, pattern="^sched_repo:"),
+            ],
+            SCHED_SEARCH_REPO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, sched_repo_search_received),
                 CallbackQueryHandler(sched_repo_selected_callback, pattern="^sched_repo:"),
             ],
             SCHED_SELECT_ISSUE: [
                 CallbackQueryHandler(sched_issue_page_callback, pattern="^sched_issue_page:"),
                 CallbackQueryHandler(sched_issue_selected_callback, pattern="^sched_issue:\\d+$"),
+            ],
+            SCHED_SELECT_PROJECT: [
+                CallbackQueryHandler(
+                    sched_project_page_callback, pattern=r"^sched_project_page:\d+$"
+                ),
+                CallbackQueryHandler(
+                    sched_project_selected_callback, pattern=r"^sched_project:\d+$"
+                ),
             ],
             SCHED_ENTER_TIME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, sched_time_received),
@@ -444,11 +613,7 @@ def build_schedule_handler() -> ConversationHandler:
             ],
         },
         fallbacks=[
-            CallbackQueryHandler(
-                lambda u, c: (u.callback_query.answer() or True) and u.callback_query.edit_message_text("❌ Cancelled."),
-                pattern="^cancel$",
-            ),
-            CallbackQueryHandler(schedule_to_menu, pattern="^menu:start$"),
+            CallbackQueryHandler(schedule_to_menu, pattern="^(cancel|menu:start)$"),
             CommandHandler("schedule", schedule_command),
         ],
         per_user=True,

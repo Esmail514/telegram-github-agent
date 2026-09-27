@@ -303,6 +303,48 @@ class JobRepository:
             return {row[0]: row[1] for row in rows}
 
 
+@dataclass
+class SelectedProject:
+    user_id: int
+    name: str
+    path: str
+    repo_full_name: str | None
+    updated_at: str
+
+
+class SelectedProjectRepository:
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def save(
+        self,
+        user_id: int,
+        name: str,
+        path: str,
+        repo_full_name: str | None,
+    ) -> None:
+        await self._db.conn.execute(
+            """
+            INSERT INTO selected_projects (user_id, name, path, repo_full_name, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                name = excluded.name,
+                path = excluded.path,
+                repo_full_name = excluded.repo_full_name,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, name, path, repo_full_name, _now()),
+        )
+        await self._db.conn.commit()
+
+    async def get(self, user_id: int) -> SelectedProject | None:
+        async with self._db.conn.execute(
+            "SELECT * FROM selected_projects WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return SelectedProject(**dict(row)) if row else None
+
+
 # ---------------------------------------------------------------------------
 # Structured job events (live progress + /logs)
 # ---------------------------------------------------------------------------

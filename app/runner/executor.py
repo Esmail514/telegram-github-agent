@@ -1,7 +1,7 @@
 """
 Job Executor — orchestrates the full agent workflow:
 
-    clone → branch → inspect → agent → commit → push → PR
+    clone  branch  inspect  agent  commit  push  PR
 
 All Telegram progress notifications go through the `notify_fn` callback
 so this module has no direct Telegram dependency.
@@ -161,7 +161,7 @@ class JobExecutor:
         agent_manager.clear_active()
 
         await notify(
-            f"🛑 Agent stopped\n\n"
+            f" Agent stopped\n\n"
             f"Repository: {active.repo_full_name}\n"
             f"Issue: #{active.issue_number}\n\n"
             f"The workspace was preserved for inspection."
@@ -232,7 +232,7 @@ class JobExecutor:
         self._active_task.add_done_callback(self._on_task_done)
 
         await notify(
-            f"🔄 Resuming interrupted job {job.job_id}\n\n"
+            f" Resuming interrupted job {job.job_id}\n\n"
             f"Repository: {job.repo_full_name}\n"
             f"Issue: #{job.issue_number}\n"
             f"Branch: {job.branch}\n"
@@ -313,8 +313,8 @@ class JobExecutor:
     def _approval_keyboard(approval_id: int) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ موافقة (Approve)", callback_data=f"approve:{approval_id}"),
-                InlineKeyboardButton("❌ رفض (Reject)", callback_data=f"reject:{approval_id}"),
+                InlineKeyboardButton("موافقة (Approve)", callback_data=f"approve:{approval_id}"),
+                InlineKeyboardButton("رفض (Reject)", callback_data=f"reject:{approval_id}"),
             ]
         ])
 
@@ -358,7 +358,7 @@ class JobExecutor:
                 workspace_path = local_workspace_path
                 await update(JobStatus.CLONING, "Using local path")
                 await notify(
-                    f"🚀 Agent started (local workspace)\n\n"
+                    f" Agent started (local workspace)\n\n"
                     f"Repository: {repo_info.full_name}\n"
                     f"Issue: #{issue_info.number}\n"
                     f"Branch: {branch}\n"
@@ -375,7 +375,7 @@ class JobExecutor:
                 # -------------------------------------------------------
                 await update(JobStatus.CLONING, "Cloning repository")
                 await notify(
-                    f"🚀 Agent started\n\n"
+                    f" Agent started\n\n"
                     f"Repository: {repo_info.full_name}\n"
                     f"Issue: #{issue_info.number}\n"
                     f"Branch: {branch}"
@@ -403,7 +403,7 @@ class JobExecutor:
 
             # --- Phase: INSPECTING ----------------------------------------
             await update(JobStatus.INSPECTING, "Inspecting repository")
-            await notify("🔍 Inspecting repository...")
+            await notify(" Inspecting repository...")
 
             context = context_builder.build(
                 repo_info=repo_info,
@@ -415,10 +415,10 @@ class JobExecutor:
 
             # --- Phase: IMPLEMENTING ----------------------------------------
             await update(JobStatus.IMPLEMENTING, "Running agent")
-            await notify("🛠 Running AI agent...")
+            await notify(" Running AI agent...")
 
             async def on_agent_progress(msg: str) -> None:
-                await progress.report(msg, level="INFO", phase="agent", notify=True)
+                await progress.report(msg, level="INFO", phase="agent")
 
             timeout_secs = settings.MAX_AGENT_RUNTIME_MINUTES * 60
             try:
@@ -442,15 +442,15 @@ class JobExecutor:
                     err_msg = token_limit_error()
                     await update(JobStatus.FAILED, "Paused (Token Limit)", error=err_msg)
                     kb = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("👥 التبديل إلى حساب آخر", callback_data="menu:accounts")],
-                        [InlineKeyboardButton("🔄 استئناف العمل فوراً", callback_data=f"acc_resume:{job_id}")],
+                        [InlineKeyboardButton("التبديل إلى حساب آخر", callback_data="menu:accounts")],
+                        [InlineKeyboardButton("استئناف العمل فوراً", callback_data=f"acc_resume:{job_id}")],
                     ])
                     await notify(
-                        f"⚠️ *توقف الـ Agent مؤقتاً: نفاد رصيد الـ Tokens!*\n\n"
-                        f"📦 *المستودع:* `{repo_info.full_name}`\n"
-                        f"📌 *المهمة:* #{issue_info.number}\n"
-                        f"🌿 *الفرع:* `{branch}`\n\n"
-                        f"💾 تم حفظ مساحة العمل والتعديلات بأمان.\n"
+                        f" *توقف الـ Agent مؤقتاً: نفاد رصيد الـ Tokens!*\n\n"
+                        f" *المستودع:* `{repo_info.full_name}`\n"
+                        f" *المهمة:* #{issue_info.number}\n"
+                        f" *الفرع:* `{branch}`\n\n"
+                        f" تم حفظ مساحة العمل والتعديلات بأمان.\n"
                         f"يمكنك التبديل إلى حساب Antigravity آخر عبر قائمة الحسابات ثم استئناف العمل ليكمل الـ Agent من حيث توقف دون إعادة العمل.",
                         reply_markup=kb,
                     )
@@ -458,17 +458,17 @@ class JobExecutor:
                 if outcome.code == FailureCode.TIMEOUT:
                     await update(JobStatus.FAILED, "Timed out", error="Agent exceeded time limit")
                     await notify(
-                        f"⏰ Agent timed out after {settings.MAX_AGENT_RUNTIME_MINUTES} minutes."
+                        f" Agent timed out after {settings.MAX_AGENT_RUNTIME_MINUTES} minutes."
                     )
                     return
                 error_msg = result.error or "Agent returned non-zero exit code"
                 await update(JobStatus.FAILED, "Agent failed", error=error_msg[:500])
                 await notify(
-                    f"❌ Agent failed\n\n{error_msg[:300]}"
+                    f" Agent failed\n\n{error_msg[:300]}"
                 )
                 return
 
-            await notify("✅ Agent completed implementation!")
+            await notify(" Agent completed implementation!")
 
             # -----------------------------------------------------------
             # Change detection (before verification — nothing to verify if empty)
@@ -481,7 +481,7 @@ class JobExecutor:
                     error="Agent completed but made no file changes",
                 )
                 await notify(
-                    "⚠️ Agent finished but made no file changes. Nothing to commit."
+                    " Agent finished but made no file changes. Nothing to commit."
                 )
                 return
 
@@ -492,7 +492,7 @@ class JobExecutor:
             # Phase: VERIFYING — controller-enforced checks
             # -----------------------------------------------------------
             await update(JobStatus.VERIFYING, "Running verification checks")
-            await notify("🧪 Running controller verification checks...")
+            await notify(" Running controller verification checks...")
 
             vresult = await verification.run(job_id, workspace_path, progress=progress)
             await progress.report(vresult.summary(), phase="verification", notify=False)
@@ -503,10 +503,10 @@ class JobExecutor:
                     error=f"required check failed:\n{vresult.summary(300)}",
                 )
                 await notify(
-                    f"❌ Verification blocked this job.\n\n{vresult.summary(400)}"
+                    f" Verification blocked this job.\n\n{vresult.summary(400)}"
                 )
                 return
-            await notify(f"✅ Verification passed.\n\n{vresult.summary(400)}")
+            await notify(f" Verification passed.\n\n{vresult.summary(400)}")
 
             # -----------------------------------------------------------
             # Risk classification for the approval gates
@@ -527,11 +527,11 @@ class JobExecutor:
                     f"Awaiting approval ({gate}, risk {risk})",
                 )
                 await notify(
-                    f"🧑‍💻 *Approval needed — {stage}*\n\n"
-                    f"🆔 Job: `{job_id}`\n"
-                    f"🌿 Branch: `{branch}`\n"
-                    f"⚠️ Risk: `{risk}`\n"
-                    f"📊 Files changed: `{len(changed_files)}`\n\n"
+                    f" *Approval needed — {stage}*\n\n"
+                    f" Job: `{job_id}`\n"
+                    f" Branch: `{branch}`\n"
+                    f" Risk: `{risk}`\n"
+                    f" Files changed: `{len(changed_files)}`\n\n"
                     f"Approve to continue or reject to stop.",
                     reply_markup=self._approval_keyboard(record.id),
                 )
@@ -552,7 +552,7 @@ class JobExecutor:
                     error=f"{gate}: {error_desc}",
                 )
                 await notify(
-                    f"🚫 Job stopped — {error_desc}.\n\n"
+                    f" Job stopped — {error_desc}.\n\n"
                     f"The workspace was preserved for inspection."
                 )
                 return False
@@ -562,7 +562,7 @@ class JobExecutor:
 
             # --- Phase: COMMITTING ----------------------------------------
             await update(JobStatus.COMMITTING, "Committing changes")
-            await notify("📦 Creating commit...")
+            await notify(" Creating commit...")
 
             commit_msg = make_commit_message(issue_info.title, issue_info.number)
             try:
@@ -570,7 +570,7 @@ class JobExecutor:
             except SecretDetectedError as exc:
                 await update(JobStatus.FAILED, "Secret detected", error=str(exc)[:300])
                 await notify(
-                    "🔒 Commit blocked: potential secret detected in changes.\n"
+                    " Commit blocked: potential secret detected in changes.\n"
                     "Please review the workspace manually."
                 )
                 return
@@ -579,7 +579,7 @@ class JobExecutor:
             if not await approval_gate("before push", BEFORE_PUSH):
                 return
             await update(JobStatus.PUSHING, "Pushing branch")
-            await notify(f"⬆️ Pushing branch {branch}...")
+            await notify(f" Pushing branch {branch}...")
 
             await git_service.push(workspace_path, branch=branch)
 
@@ -587,11 +587,11 @@ class JobExecutor:
             if not await approval_gate("before pull request", BEFORE_PR):
                 return
             await update(JobStatus.CREATING_PR, "Creating Pull Request")
-            await notify("🔀 Creating Pull Request...")
+            await notify(" Creating Pull Request...")
 
             pr_title = make_pr_title(issue_info.title)
             validation_results = (
-                "✅ Agent reported success\n"
+                " Agent reported success\n"
                 + (result.summary[:500] if result.summary else "")
             )
             pr_body = make_pr_body(
@@ -621,7 +621,7 @@ class JobExecutor:
             # Check if auto-merge is enabled
             if getattr(settings, "AUTO_MERGE_PR", False):
                 await update("MERGING_PR", "Merging Pull Request")
-                await notify("🔀 Auto-merging Pull Request...")
+                await notify(" Auto-merging Pull Request...")
                 merge_method = getattr(settings, "DEFAULT_MERGE_METHOD", "squash")
                 merge_result = pr_service.merge_pr(
                     repo_full_name=repo_info.full_name,
@@ -634,7 +634,7 @@ class JobExecutor:
                     sha_str = f" (`{merge_result.sha[:7]}`)" if merge_result.sha else ""
                     await self._send_notification(
                         notify,
-                        f"🎉 Agent completed & PR merged successfully!{sha_str}\n\n"
+                        f" Agent completed & PR merged successfully!{sha_str}\n\n"
                         f"Repository: {repo_info.full_name}\n"
                         f"Issue: #{issue_info.number}\n"
                         f"Branch: {branch}\n"
@@ -659,7 +659,7 @@ class JobExecutor:
 
             await self._send_notification(
                 notify,
-                f"🎉 Agent completed successfully!\n\n"
+                f" Agent completed successfully!\n\n"
                 f"Repository: {repo_info.full_name}\n"
                 f"Issue: #{issue_info.number}\n"
                 f"Branch: {branch}\n"
@@ -680,7 +680,7 @@ class JobExecutor:
                 await repo.update_job(job_id, error=error_str[:500])
                 await repo.set_status(job_id, JobStatus.FAILED, phase="Timed out")
                 await notify(
-                    f"⏰ Operation timed out to protect resources:\n\n"
+                    f" Operation timed out to protect resources:\n\n"
                     f"`{error_str[:250]}`"
                 )
             except Exception:
@@ -693,7 +693,7 @@ class JobExecutor:
                 await repo.update_job(job_id, error=error_str)
                 await repo.set_status(job_id, JobStatus.FAILED)
                 await notify(
-                    f"❌ Job failed with an unexpected error.\n\n"
+                    f" Job failed with an unexpected error.\n\n"
                     f"{error_str[:200]}"
                 )
             except Exception:

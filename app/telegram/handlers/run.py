@@ -2,7 +2,7 @@
 /run handler — launch an AI agent job for a selected issue.
 
 Flow:
-    Select Repo → Select Issue → [Clone / Local Path] → (type path if local) → Confirm Agent → Launch
+    Select Repo  Select Issue  [Clone / Local Path]  (type path if local)  Confirm Agent  Launch
 """
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ async def run_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if projects:
         return await show_project_select_for_run(update, context, page=0)
     assert update.message
-    await update.message.reply_text("⏳ Fetching repositories...")
+    await update.message.reply_text(" Fetching repositories...")
     return await show_repo_select_for_run(update, context)
 
 
@@ -91,10 +91,10 @@ async def show_project_select_for_run(
     # Add option to browse GitHub remote repos
     from telegram import InlineKeyboardButton
     keyboard.inline_keyboard.insert(-1, [
-        InlineKeyboardButton("🌐 تصفح مستودعات GitHub عن بُعد", callback_data="run_browse_github")
+        InlineKeyboardButton("تصفح مستودعات GitHub عن بُعد", callback_data="run_browse_github")
     ])
 
-    text = f"🚀 *تشغيل الـ Agent — اختر المشروع* (صفحة {page + 1}):\n\nاختر مشروعاً محلياً للعمل عليه:"
+    text = f" *تشغيل الـ Agent — اختر المشروع* (صفحة {page + 1}):\n\nاختر مشروعاً محلياً للعمل عليه:"
 
     if update.callback_query:
         await update.callback_query.answer()
@@ -139,12 +139,12 @@ async def run_proj_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         project = project_scanner.get_project_by_name(raw_val)
 
     if not project:
-        await query.edit_message_text("❌ لم يتم العثور على المشروع، استخدم /run للبدء من جديد.")
+        await query.edit_message_text(" لم يتم العثور على المشروع، استخدم /run للبدء من جديد.")
         return ConversationHandler.END
 
     if not project.repo_full_name:
         await query.edit_message_text(
-            f"⚠️ المشروع `{project.name}` غير مرتبط بمستودع GitHub على الإنترنت.\n\n"
+            f" المشروع `{project.name}` غير مرتبط بمستودع GitHub على الإنترنت.\n\n"
             f"يرجى ربط مستودع GitHub لجلب وحل الـ Issues.",
             parse_mode="Markdown",
         )
@@ -167,7 +167,7 @@ async def show_repo_select_for_run(
         )
     except Exception as exc:
         logger.error("Failed to list repos: %s", exc)
-        msg = "❌ تعذر جلب المستودعات من GitHub."
+        msg = " تعذر جلب المستودعات من GitHub."
         if update.callback_query:
             await update.callback_query.edit_message_text(msg)
         elif update.message:
@@ -181,7 +181,7 @@ async def show_repo_select_for_run(
         page_prefix="run_repo_page:",
         include_cancel=True,
     )
-    text = f"🚀 *تشغيل الـ Agent*\n\nاختر المستودع المطلوب (صفحة {page + 1}):"
+    text = f" *تشغيل الـ Agent*\n\nاختر المستودع المطلوب (صفحة {page + 1}):"
 
     if update.callback_query:
         await update.callback_query.answer()
@@ -224,14 +224,14 @@ async def _show_run_issues(
         )
     except Exception as exc:
         logger.error("Failed to list issues: %s", exc)
-        await query.edit_message_text("❌ تعذر جلب الـ Issues لهذا المستودع.")
+        await query.edit_message_text(" تعذر جلب الـ Issues لهذا المستودع.")
         return ConversationHandler.END
 
     if not issues:
         msg = (
-            f"📋 لا توجد Issues مفتوحة في `{full_name}`."
+            f" لا توجد Issues مفتوحة في `{full_name}`."
             if page == 0
-            else f"📋 لا يوجد المزيد من الـ Issues في `{full_name}`."
+            else f" لا يوجد المزيد من الـ Issues في `{full_name}`."
         )
         await query.edit_message_text(msg, parse_mode="Markdown")
         return ConversationHandler.END
@@ -245,7 +245,7 @@ async def _show_run_issues(
         include_cancel=True,
     )
     await query.edit_message_text(
-        f"📋 *اختيار Issue* — `{full_name}` (صفحة {page + 1})\n\nما هو الـ Issue الذي تريد من الـ Agent حله؟",
+        f" *اختيار Issue* — `{full_name}` (صفحة {page + 1})\n\nما هو الـ Issue الذي تريد من الـ Agent حله؟",
         reply_markup=keyboard,
         parse_mode="Markdown",
     )
@@ -274,7 +274,7 @@ async def run_issue_page_callback(
     page = int((query.data or "").replace("run_issue_page:", ""))
     full_name = (context.user_data or {}).get("run_repo", "")
     if not full_name:
-        await query.edit_message_text("❌ Context lost. Use /run to start again.")
+        await query.edit_message_text(" Context lost. Use /run to start again.")
         return ConversationHandler.END
     return await _show_run_issues(update, context, full_name, page=page)
 
@@ -288,7 +288,7 @@ async def run_issue_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
     full_name = (context.user_data or {}).get("run_repo", "")
 
     if not full_name:
-        await query.edit_message_text("❌ فُقد سياق المستودع، استخدم /run للبدء من جديد.")
+        await query.edit_message_text(" فُقد سياق المستودع، استخدم /run للبدء من جديد.")
         return ConversationHandler.END
 
     try:
@@ -297,7 +297,7 @@ async def run_issue_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
     except Exception as exc:
         logger.error("Failed to load issue: %s", exc)
-        await query.edit_message_text(f"❌ تعذر تحميل الـ Issue #{issue_number}.")
+        await query.edit_message_text(f" تعذر تحميل الـ Issue #{issue_number}.")
         return ConversationHandler.END
 
     if context.user_data is not None:
@@ -311,13 +311,13 @@ async def run_issue_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
     body_preview = (issue.body[:300] + "...") if len(issue.body) > 300 else issue.body
 
     text = (
-        f"🚀 *تم اختيار الـ Issue*\n\n"
-        f"📦 *المستودع:* `{full_name}`\n"
-        f"📌 *الـ Issue:* #{issue.number} — {issue.title}\n"
-        f"🌿 *الفرع:* `{branch}`\n\n"
-        f"📝 *الوصف:*\n{body_preview or '_(فارغ)_'}\n\n"
+        f" *تم اختيار الـ Issue*\n\n"
+        f" *المستودع:* `{full_name}`\n"
+        f" *الـ Issue:* #{issue.number} — {issue.title}\n"
+        f" *الفرع:* `{branch}`\n\n"
+        f" *الوصف:*\n{body_preview or '_(فارغ)_'}\n\n"
         f"━━━━━━━━━━━━━━\n"
-        f"📂 *أين يقع المشروع؟*\n\n"
+        f" *أين يقع المشروع؟*\n\n"
         f"اختر ما إذا كنت تريد استنساخ المستودع من GitHub،\n"
         f"أو استخدام مجلد مشروع موجود بالفعل على هذا الجهاز:"
     )
@@ -337,7 +337,7 @@ async def run_issue_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def run_ws_clone_selected(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    """User chose ⬇️ Clone from GitHub — skip path entry, go straight to confirm."""
+    """User chose  Clone from GitHub — skip path entry, go straight to confirm."""
     query = update.callback_query
     assert query
     await query.answer()
@@ -351,7 +351,7 @@ async def run_ws_clone_selected(
 async def run_ws_local_selected(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    """User chose 📁 Use Local Path — prompt them to type the path."""
+    """User chose  Use Local Path — prompt them to type the path."""
     query = update.callback_query
     assert query
     await query.answer()
@@ -359,12 +359,12 @@ async def run_ws_local_selected(
     full_name = (context.user_data or {}).get("run_repo", "")
 
     await query.edit_message_text(
-        f"📁 *إدخال مسار المشروع المحلي*\n\n"
+        f" *إدخال مسار المشروع المحلي*\n\n"
         f"أرسل **المسار الكامل (Absolute Path)** للمستودع المحلي `{full_name}` على جهازك.\n\n"
         f"*أمثلة:*\n"
         f"• Windows: `D:\\Projects\\my-repo`\n"
         f"• macOS/Linux: `/home/user/projects/my-repo`\n\n"
-        f"أرسل /cancel للإلغاء.",
+        f"أرسل /cancel للرجوع.",
         parse_mode="Markdown",
         reply_markup=cancel_keyboard(),
     )
@@ -382,8 +382,8 @@ async def run_local_path_received(
 
     if not path.exists():
         await update.message.reply_text(
-            f"⚠️ *المسار غير موجود:*\n`{path}`\n\n"
-            f"يرجى التأكد من صحة المسار والمحاولة مجدداً، أو إرسال /cancel للإلغاء.",
+            f" *المسار غير موجود:*\n`{path}`\n\n"
+            f"يرجى التأكد من صحة المسار والمحاولة مجدداً، أو إرسال /cancel للرجوع.",
             parse_mode="Markdown",
             reply_markup=cancel_keyboard(),
         )
@@ -391,7 +391,7 @@ async def run_local_path_received(
 
     if not path.is_dir():
         await update.message.reply_text(
-            f"⚠️ المسار المحدد هو ملف وليس مجلداً:\n`{path}`\n\nيرجى إرسال مسار مجلد.",
+            f" المسار المحدد هو ملف وليس مجلداً:\n`{path}`\n\nيرجى إرسال مسار مجلد.",
             parse_mode="Markdown",
             reply_markup=cancel_keyboard(),
         )
@@ -400,7 +400,7 @@ async def run_local_path_received(
     # Check it looks like a git repo
     if not (path / ".git").exists():
         await update.message.reply_text(
-            f"⚠️ *لم يتم العثور على مجلد `.git`* في:\n`{path}`\n\n"
+            f" *لم يتم العثور على مجلد `.git`* في:\n`{path}`\n\n"
             f"هذا المسار لا يبدو أنه مستودع git صالح.\n"
             f"هل أنت متأكد من صحة المسار؟ أرسل المسار مجدداً أو /cancel.",
             parse_mode="Markdown",
@@ -412,7 +412,7 @@ async def run_local_path_received(
         context.user_data["run_local_path"] = str(path.resolve())
 
     await update.message.reply_text(
-        f"✅ *تم قبول المسار:*\n`{path.resolve()}`",
+        f" *تم قبول المسار:*\n`{path.resolve()}`",
         parse_mode="Markdown",
     )
     return await _show_confirm_from_message(update, context)
@@ -436,16 +436,16 @@ async def _show_confirm(
 
     branch = make_branch_name(issue_number)
     ws_line = (
-        f"*بيئة العمل:* `{local_path}`  📁 مسار محلي"
+        f"*بيئة العمل:* `{local_path}`   مسار محلي"
         if local_path
-        else "*بيئة العمل:* مستنسخ من GitHub  ⬇️"
+        else "*بيئة العمل:* مستنسخ من GitHub  "
     )
 
     text = (
-        f"🚀 *تأكيد تشغيل الـ AI Agent*\n\n"
-        f"📦 *المستودع:* `{full_name}`\n"
-        f"📌 *الـ Issue:* #{issue_number}\n"
-        f"🌿 *الفرع:* `{branch}`\n"
+        f" *تأكيد تشغيل الـ AI Agent*\n\n"
+        f" *المستودع:* `{full_name}`\n"
+        f" *الـ Issue:* #{issue_number}\n"
+        f" *الفرع:* `{branch}`\n"
         f"{ws_line}\n\n"
         f"اختر الـ Agent المطلوب لتنفيذ الحل:"
     )
@@ -471,16 +471,16 @@ async def _show_confirm_from_message(
 
     branch = make_branch_name(issue_number)
     ws_line = (
-        f"*بيئة العمل:* `{local_path}`  📁 مسار محلي"
+        f"*بيئة العمل:* `{local_path}`   مسار محلي"
         if local_path
-        else "*بيئة العمل:* مستنسخ من GitHub  ⬇️"
+        else "*بيئة العمل:* مستنسخ من GitHub  "
     )
 
     text = (
-        f"🚀 *تأكيد تشغيل الـ AI Agent*\n\n"
-        f"📦 *المستودع:* `{full_name}`\n"
-        f"📌 *الـ Issue:* #{issue_number}\n"
-        f"🌿 *الفرع:* `{branch}`\n"
+        f" *تأكيد تشغيل الـ AI Agent*\n\n"
+        f" *المستودع:* `{full_name}`\n"
+        f" *الـ Issue:* #{issue_number}\n"
+        f" *الفرع:* `{branch}`\n"
         f"{ws_line}\n\n"
         f"اختر الـ Agent المطلوب لتنفيذ الحل:"
     )
@@ -509,7 +509,7 @@ async def run_issue_from_detail(
     full_name = (context.user_data or {}).get("selected_repo", "")
 
     if not full_name:
-        await query.edit_message_text("❌ فُقد سياق المستودع، استخدم /run للبدء من جديد.")
+        await query.edit_message_text(" فُقد سياق المستودع، استخدم /run للبدء من جديد.")
         return ConversationHandler.END
 
     if context.user_data is not None:
@@ -521,17 +521,17 @@ async def run_issue_from_detail(
             None, lambda: issue_service.get_issue(full_name, issue_number)
         )
     except Exception:
-        await query.edit_message_text(f"❌ تعذر تحميل الـ Issue #{issue_number}.")
+        await query.edit_message_text(f" تعذر تحميل الـ Issue #{issue_number}.")
         return ConversationHandler.END
 
     branch = make_branch_name(issue.number)
     text = (
-        f"🚀 *تم اختيار الـ Issue*\n\n"
-        f"📦 *المستودع:* `{full_name}`\n"
-        f"📌 *الـ Issue:* #{issue.number} — {issue.title}\n"
-        f"🌿 *الفرع:* `{branch}`\n\n"
+        f" *تم اختيار الـ Issue*\n\n"
+        f" *المستودع:* `{full_name}`\n"
+        f" *الـ Issue:* #{issue.number} — {issue.title}\n"
+        f" *الفرع:* `{branch}`\n\n"
         f"━━━━━━━━━━━━━━\n"
-        f"📂 *أين يقع المشروع؟*\n\n"
+        f" *أين يقع المشروع؟*\n\n"
         f"اختر الاستنساخ من GitHub أو استخدام مجلد محلي على هذا الجهاز:"
     )
     await query.edit_message_text(
@@ -554,7 +554,7 @@ async def run_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     data = query.data or ""
 
     if data == "cancel":
-        await query.edit_message_text("❌ تم إلغاء تشغيل الـ Agent.")
+        await query.edit_message_text(" تم رجوع تشغيل الـ Agent.")
         return ConversationHandler.END
 
     ud = context.user_data or {}
@@ -563,10 +563,10 @@ async def run_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     local_path: str | None = ud.get("run_local_path")
 
     if not full_name or not issue_number:
-        await query.edit_message_text("❌ فُقد سياق المستودع، استخدم /run للبدء من جديد.")
+        await query.edit_message_text(" فُقد سياق المستودع، استخدم /run للبدء من جديد.")
         return ConversationHandler.END
 
-    await query.edit_message_text("⏳ جاري تجهيز المهمة...")
+    await query.edit_message_text(" جاري تجهيز المهمة...")
 
     try:
         repo_info = await asyncio.get_event_loop().run_in_executor(
@@ -577,12 +577,12 @@ async def run_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         )
     except Exception as exc:
         logger.error("Failed to load repo/issue for run: %s", exc)
-        await query.edit_message_text("❌ تعذر تحميل تفاصيل المستودع أو الـ Issue.")
+        await query.edit_message_text(" تعذر تحميل تفاصيل المستودع أو الـ Issue.")
         return ConversationHandler.END
 
     executor = context.bot_data.get("executor")
     if executor is None:
-        await query.edit_message_text("❌ نظام تشغيل المهام (Job Executor) غير مهيأ. يرجى إعادة تشغيل البوت.")
+        await query.edit_message_text(" نظام تشغيل المهام (Job Executor) غير مهيأ. يرجى إعادة تشغيل البوت.")
         return ConversationHandler.END
 
     chat_id = query.message.chat_id if query.message else 0
@@ -615,31 +615,31 @@ async def run_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             notify_fn=notify,
         )
         agent_label = f" ({agent_name})" if agent_name else ""
-        ws_label = f"📁 مسار محلي: `{local_path}`" if local_path else "⬇️ مستنسخ من GitHub"
+        ws_label = f" مسار محلي: `{local_path}`" if local_path else " مستنسخ من GitHub"
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         run_kb = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("📊 متابعة الحالة", callback_data="menu:status"),
-                InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="menu:start"),
+                InlineKeyboardButton("متابعة الحالة", callback_data="menu:status"),
+                InlineKeyboardButton("القائمة الرئيسية", callback_data="menu:start"),
             ]
         ])
         await query.edit_message_text(
-            f"🚀 *بدء المهمة بنجاح!*{agent_label}\n"
+            f" *بدء المهمة بنجاح!*{agent_label}\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 *معرف العملية:* `{job.job_id}`\n"
-            f"📦 *المستودع:* `{full_name}`\n"
-            f"📌 *الـ Issue:* `#{issue_number}`\n"
-            f"📂 *بيئة العمل:* {ws_label}\n"
+            f" *معرف العملية:* `{job.job_id}`\n"
+            f" *المستودع:* `{full_name}`\n"
+            f" *الـ Issue:* `#{issue_number}`\n"
+            f" *بيئة العمل:* {ws_label}\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            "⏳ سأرسل لك تحديثات فورية حول مراحل التحليل والحل...",
+            " سأرسل لك تحديثات فورية حول مراحل التحليل والحل...",
             reply_markup=run_kb,
             parse_mode="Markdown",
         )
     except RuntimeError as exc:
-        await query.edit_message_text(f"⚠️ {exc}")
+        await query.edit_message_text(f" {exc}")
     except Exception as exc:
         logger.error("Failed to start job: %s", exc)
-        await query.edit_message_text(f"❌ تعذر بدء المهمة: {str(exc)[:200]}")
+        await query.edit_message_text(f" تعذر بدء المهمة: {str(exc)[:200]}")
 
     return ConversationHandler.END
 
@@ -666,9 +666,9 @@ async def run_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def run_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text("❌ تم إلغاء تشغيل الـ Agent.")
+        await update.callback_query.edit_message_text(" تم رجوع تشغيل الـ Agent.")
     elif update.message:
-        await update.message.reply_text("❌ تم إلغاء تشغيل الـ Agent.")
+        await update.message.reply_text(" تم رجوع تشغيل الـ Agent.")
     return ConversationHandler.END
 
 

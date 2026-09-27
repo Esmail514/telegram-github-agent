@@ -109,6 +109,16 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 """
 
+SELECTED_PROJECTS_TABLE = """
+CREATE TABLE IF NOT EXISTS selected_projects (
+    user_id         INTEGER PRIMARY KEY,
+    name            TEXT NOT NULL,
+    path            TEXT NOT NULL,
+    repo_full_name  TEXT,
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+"""
+
 CREATE_JOBS_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_jobs_status
     ON jobs (status, created_at);
@@ -139,11 +149,14 @@ CREATE INDEX IF NOT EXISTS idx_approvals_job_id
 MIGRATIONS = [
     ("jobs", "workspace_path", "ALTER TABLE jobs ADD COLUMN workspace_path TEXT"),
     ("jobs", "local_workspace", "ALTER TABLE jobs ADD COLUMN local_workspace INTEGER NOT NULL DEFAULT 0"),
+    ("scheduled_jobs", "project_name", "ALTER TABLE scheduled_jobs ADD COLUMN project_name TEXT"),
+    ("scheduled_jobs", "workspace_path", "ALTER TABLE scheduled_jobs ADD COLUMN workspace_path TEXT"),
 ]
 
 ALL_DDL = [
     JOBS_TABLE,
     SESSIONS_TABLE,
+    SELECTED_PROJECTS_TABLE,
     CREATE_JOBS_INDEX,
     SCHEDULED_JOBS_TABLE,
     CREATE_SCHEDULED_INDEX,

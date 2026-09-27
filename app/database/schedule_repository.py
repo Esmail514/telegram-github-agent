@@ -31,6 +31,8 @@ class ScheduledJob:
     agent: str
     scheduled_at: str       # ISO format UTC string
     chat_id: int
+    project_name: str | None
+    workspace_path: str | None
     status: str
     created_at: str
 
@@ -55,6 +57,8 @@ class ScheduleRepository:
         agent: str,
         scheduled_at: datetime,
         chat_id: int,
+        project_name: str | None = None,
+        workspace_path: str | None = None,
     ) -> ScheduledJob:
         """Insert a new scheduled job and return it."""
         scheduled_at_str = scheduled_at.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -62,15 +66,19 @@ class ScheduleRepository:
         cursor = await self._db.conn.execute(
             """
             INSERT INTO scheduled_jobs
-                (repo_full_name, issue_number, agent, scheduled_at, chat_id, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (repo_full_name, issue_number, agent, scheduled_at, chat_id,
+                 project_name, workspace_path, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (repo_full_name, issue_number, agent, scheduled_at_str,
-             chat_id, ScheduledJobStatus.PENDING, now),
+             chat_id, project_name, workspace_path, ScheduledJobStatus.PENDING, now),
         )
         await self._db.conn.commit()
         row_id = cursor.lastrowid
-        return await self.get(row_id)  # type: ignore[return-value]
+        assert row_id is not None
+        created = await self.get(row_id)
+        assert created is not None
+        return created
 
     async def get(self, job_id: int) -> ScheduledJob | None:
         async with self._db.conn.execute(
@@ -182,6 +190,8 @@ def _row_to_job(row: Any) -> ScheduledJob:
         agent=d["agent"],
         scheduled_at=d["scheduled_at"],
         chat_id=d["chat_id"],
+        project_name=d.get("project_name"),
+        workspace_path=d.get("workspace_path"),
         status=d["status"],
         created_at=d["created_at"],
     )
