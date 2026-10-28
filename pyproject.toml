@@ -11,7 +11,7 @@ readme = "README.md"
 license = { text = "MIT" }
 dependencies = [
     "python-telegram-bot>=21.0,<22.0",
-    "PyGithub>=2.3",
+    "PyGithub>=2.10.0",
     "gitpython>=3.1",
     "aiosqlite>=0.20",
     "pydantic-settings>=2.3",
