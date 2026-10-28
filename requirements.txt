@@ -13,5 +13,5 @@ psutil>=5.9
 pytest>=8.0
 pytest-asyncio>=0.23
 pytest-mock>=3.14
-ruff>=0.4
+ruff>=0.17.2
 mypy>=1.10
