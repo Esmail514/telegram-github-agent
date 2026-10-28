@@ -23,6 +23,8 @@ config (`pyproject.toml`):
 - `py -m pytest` (asyncio_mode=auto, testpaths=tests) — full green.
 - `py -m ruff check .` — clean (line-length 100; ignores B008/E501).
 - `py -m mypy app` — no new type errors (python_version 3.11, strict=false).
+- `py -m app.main --check-config` — configuration is valid.
+- `py scripts/ci_check_secrets.py` — clean of sensitive files and diff secrets.
 - If a tools/platform mismatch exists, report the exact error and mark the
   check as blocked; do not "soft-pass".
 
@@ -48,6 +50,8 @@ Produce a checklist:
 - [ ] `py -m pytest` passed (note count)
 - [ ] `py -m ruff check .` passed
 - [ ] `py -m mypy app` passed
+- [ ] `py -m app.main --check-config` passed
+- [ ] `py scripts/ci_check_secrets.py` passed
 - [ ] `git status`/`git diff` clean of secrets/strays, scope respected
 - [ ] Acceptance criteria met
 - Verdict: **APPROVED** / **REVISION REQUIRED** (list the failing item).

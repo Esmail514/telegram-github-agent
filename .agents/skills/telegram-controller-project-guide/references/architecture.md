@@ -18,8 +18,8 @@ Python 3.11+ is declared. Telegram uses `python-telegram-bot` 21.x with async
 handlers; SQLite uses `aiosqlite`; settings use `pydantic-settings`; GitHub uses
 PyGithub. Read both `requirements.txt` and `pyproject.toml`: CI installs
 `pip install -e ".[dev]"`, which is not the same dependency path as the README's
-requirements installation. CI tests Python 3.11/3.12 on Linux; a Windows test run
-does not verify that matrix.
+requirements installation. CI tests Python 3.11/3.12 on Linux and 3.11 on
+Windows.
 
 ## Main execution routes
 

@@ -75,8 +75,7 @@ Rules for every agent:
 
 ## 4. Verification commands (run these; never assume)
 
-Configured in `pyproject.toml`; CI: `.github/workflows/ci.yml` (ruff + pytest
-only). Use `py` (Windows) or `python`:
+Configured in `pyproject.toml`; CI: `.github/workflows/ci.yml`. Use `py` (Windows) or `python`:
 
 | Check | Command |
 |---|---|
@@ -84,6 +83,7 @@ only). Use `py` (Windows) or `python`:
 | Lint | `py -m ruff check .` (line-length 100) |
 | Types | `py -m mypy app` (py3.11, `strict=false`) |
 | Config sanity | `py -m app.main --check-config` |
+| Secret scan | `py scripts/ci_check_secrets.py` |
 
 Skill-structure validation: `py .agents/skills/skill-maintainer/scripts/validate_skills.py`
 

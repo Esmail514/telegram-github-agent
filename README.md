@@ -180,6 +180,7 @@ py -m pytest
 py -m ruff check .
 py -m mypy app
 py -m app.main --check-config
+py scripts/ci_check_secrets.py
 py .agents/skills/skill-maintainer/scripts/validate_skills.py
 ```
 
