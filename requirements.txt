@@ -1,6 +1,6 @@
 # Core runtime dependencies
 python-telegram-bot==21.*
-PyGithub>=2.3
+PyGithub>=2.10.0
 gitpython>=3.1
 aiosqlite>=0.20
 pydantic-settings>=2.3
