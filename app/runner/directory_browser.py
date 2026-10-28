@@ -88,7 +88,10 @@ def _native_drives() -> list[Path]:
     if os.name != "nt":
         return [Path("/")]
     try:
-        bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+        windll = getattr(ctypes, "windll", None)
+        if not windll:
+            return []
+        bitmask = windll.kernel32.GetLogicalDrives()
     except (AttributeError, OSError):
         return []
     return [Path(f"{letter}:\\") for index, letter in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ") if bitmask & (1 << index)]

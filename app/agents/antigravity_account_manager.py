@@ -88,8 +88,11 @@ class AntigravityAccountManager:
         """Encrypts data with Windows DPAPI (CryptProtectData)."""
         if os.name != "nt":
             return data
+        windll = getattr(ctypes, "windll", None)
+        if not windll:
+            return data
         try:
-            crypt32 = ctypes.windll.crypt32
+            crypt32 = windll.crypt32
             in_blob = DATA_BLOB(
                 len(data), ctypes.cast(ctypes.c_char_p(data), ctypes.POINTER(ctypes.c_byte))
             )
@@ -99,7 +102,7 @@ class AntigravityAccountManager:
             ):
                 raise RuntimeError("CryptProtectData failed")
             encrypted = ctypes.string_at(out_blob.pbData, out_blob.cbData)
-            ctypes.windll.kernel32.LocalFree(out_blob.pbData)
+            windll.kernel32.LocalFree(out_blob.pbData)
             return encrypted
         except Exception as exc:
             logger.warning("DPAPI encryption fallback: %s", exc)
@@ -109,8 +112,11 @@ class AntigravityAccountManager:
         """Decrypts data with Windows DPAPI (CryptUnprotectData)."""
         if os.name != "nt":
             return data
+        windll = getattr(ctypes, "windll", None)
+        if not windll:
+            return data
         try:
-            crypt32 = ctypes.windll.crypt32
+            crypt32 = windll.crypt32
             in_blob = DATA_BLOB(
                 len(data), ctypes.cast(ctypes.c_char_p(data), ctypes.POINTER(ctypes.c_byte))
             )
@@ -120,7 +126,7 @@ class AntigravityAccountManager:
             ):
                 raise RuntimeError("CryptUnprotectData failed")
             decrypted = ctypes.string_at(out_blob.pbData, out_blob.cbData)
-            ctypes.windll.kernel32.LocalFree(out_blob.pbData)
+            windll.kernel32.LocalFree(out_blob.pbData)
             return decrypted
         except Exception as exc:
             logger.warning("DPAPI decryption fallback: %s", exc)
@@ -137,7 +143,10 @@ class AntigravityAccountManager:
         """
         if os.name != "nt":
             return None
-        advapi32 = ctypes.windll.advapi32
+        windll = getattr(ctypes, "windll", None)
+        if not windll:
+            return None
+        advapi32 = windll.advapi32
         cred_ptr = ctypes.POINTER(CREDENTIAL)()
         res = advapi32.CredReadW(
             CRED_TARGET_NAME, CRED_TYPE_GENERIC, 0, ctypes.byref(cred_ptr)
@@ -162,7 +171,10 @@ class AntigravityAccountManager:
         """
         if os.name != "nt":
             return False
-        advapi32 = ctypes.windll.advapi32
+        windll = getattr(ctypes, "windll", None)
+        if not windll:
+            return False
+        advapi32 = windll.advapi32
         new_cred = CREDENTIAL()
         new_cred.Type = CRED_TYPE_GENERIC
         new_cred.TargetName = CRED_TARGET_NAME
@@ -173,6 +185,7 @@ class AntigravityAccountManager:
         new_cred.Comment = comment
 
         res = advapi32.CredWriteW(ctypes.byref(new_cred), 0)
+        return bool(res)
         return bool(res)
 
     # ------------------------------------------------------------------
