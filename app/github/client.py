@@ -74,7 +74,7 @@ class GitHubClient:
             # Manual slice — PyGithub PaginatedList is not async
             start = page * per_page
             end = start + per_page
-            page_items = list(paginated[start:end])
+            page_items: list = list(paginated[start:end])
             return [RepoInfo.from_github(r) for r in page_items]
         except GithubException as exc:
             logger.error("GitHub error listing repos: %s", exc)

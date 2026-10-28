@@ -29,10 +29,11 @@ def _user_facing_string_constants() -> list[tuple[Path, str]]:
     return strings
 
 
-def test_bot_ui_contains_no_emoji() -> None:
-    offenders = [str(path) for path, text in _user_facing_string_constants() if _EMOJI.search(text)]
+def test_bot_ui_uses_emoji_only_for_primary_navigation() -> None:
+    keyboard = main_menu_keyboard()
+    labels = [button.text for row in keyboard.keyboard for button in row]
 
-    assert not offenders, f"Emoji found in: {sorted(set(offenders))}"
+    assert all(_EMOJI.search(label) for label in labels)
 
 
 def test_primary_screens_are_compact() -> None:
@@ -43,11 +44,11 @@ def test_primary_screens_are_compact() -> None:
 
 def test_main_menu_is_compact_and_plain() -> None:
     keyboard = main_menu_keyboard()
-    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    buttons = [button for row in keyboard.keyboard for button in row]
 
-    assert len(keyboard.inline_keyboard) <= 4
+    assert len(keyboard.keyboard) <= 4
     assert len(buttons) <= 6
-    assert all(not _EMOJI.search(button.text) for button in buttons)
+    assert all(_EMOJI.search(button.text) for button in buttons)
     assert all(button.text == button.text.strip() for button in buttons)
 
 

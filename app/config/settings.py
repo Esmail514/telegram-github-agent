@@ -116,11 +116,15 @@ class Settings(BaseSettings):
             "scans this directory and lets you browse and run jobs on local projects."
         ),
     )
+    LOCAL_PROMPT_SCHEDULES_PATH: Path | None = Field(
+        None,
+        description="Optional CSV path for scheduled local Codex prompts.",
+    )
 
     # ------------------------------------------------------------------
     # Agent
     # ------------------------------------------------------------------
-    DEFAULT_AGENT: Literal["antigravity", "codex", "claude", "gemini", "opencode"] = Field(
+    DEFAULT_AGENT: Literal["antigravity", "codex"] = Field(
         "antigravity", description="Default AI coding agent"
     )
     ANTIGRAVITY_COMMAND: str = Field(
@@ -133,7 +137,7 @@ class Settings(BaseSettings):
         "codex", description="Codex executable path or command name"
     )
     OPENCODE_COMMAND: str = Field(
-        "opencode", description="opencode executable path or name"
+        "opencode", description="Legacy setting retained for backward-compatible configuration parsing"
     )
     AUTO_MERGE_PR: bool = Field(
         False, description="Whether to automatically merge PRs after agent completes successfully"
@@ -179,12 +183,13 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Human-in-the-loop approval policy
     # ------------------------------------------------------------------
-    APPROVAL_POLICY: Literal["autonomous", "before_commit", "before_push", "before_pr"] = Field(
-        "autonomous",
+    APPROVAL_POLICY: Literal["autonomous", "before_commit", "before_push", "before_pr", "always_before_commit"] = Field(
+        "always_before_commit",
         description=(
-            "Approval gate policy. 'autonomous' = no approvals (current default). "
+            "Approval gate policy. 'autonomous' = no approvals. "
             "before_commit / before_push / before_pr require operator approval "
-            "for MEDIUM/HIGH risk changes before that git action."
+            "for MEDIUM/HIGH risk changes before that git action. "
+            "always_before_commit requires review of every agent diff."
         ),
     )
     APPROVAL_TIMEOUT_MINUTES: int = Field(
@@ -222,8 +227,8 @@ class Settings(BaseSettings):
         ),
     )
     AGENT_FALLBACK_ORDER: str = Field(
-        "antigravity,codex,opencode,claude,gemini",
-        description="Priority order used when choosing fallback agents.",
+        "antigravity,codex",
+        description="Priority order for the supported CLI agents.",
     )
 
     # ------------------------------------------------------------------
@@ -378,6 +383,18 @@ class Settings(BaseSettings):
                 self.GOOGLE_GENERATIVEAI_API_KEY.get_secret_value()
             )
         return env
+
+    @property
+    def local_prompt_schedules_path(self) -> Path:
+        """Return the user-editable CSV path without placing runtime data in the repo."""
+        if self.LOCAL_PROMPT_SCHEDULES_PATH is not None:
+            return self.LOCAL_PROMPT_SCHEDULES_PATH.resolve()
+        return (self.WORKSPACE_DIR / "schedules" / "local_prompt_schedules.csv").resolve()
+
+    @property
+    def prompt_templates_path(self) -> Path:
+        """Return the user-editable CSV path for local prompt templates."""
+        return (self.local_prompt_schedules_path.parent / "prompt_templates.csv").resolve()
 
     def set_projects_dir(self, new_path: Path | str | None) -> Path | None:
         """Update active PROJECTS_DIR at runtime."""

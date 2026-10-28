@@ -22,8 +22,11 @@ def _is_dir_allowed(target_path: Path) -> bool:
     allowed = settings.personal_allowed_dirs_list
     if not allowed:
         return True
-    resolved = str(target_path.resolve())
-    return any(resolved.startswith(str(Path(d).resolve())) for d in allowed)
+    try:
+        resolved = target_path.resolve()
+        return any(resolved.is_relative_to(Path(directory).resolve()) for directory in allowed)
+    except (OSError, ValueError):
+        return False
 
 
 def _is_sensitive_file(filename: str) -> bool:

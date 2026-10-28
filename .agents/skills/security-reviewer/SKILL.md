@@ -50,8 +50,9 @@ Rules:
 - Downloads/uploads go through `app/runner/file_transfer.py`: enforce
   `PERSONAL_ALLOWED_DIRS` and `PERSONAL_SENSITIVE_PATTERNS`
   (`.env*`, `id_rsa*`, `*.pem`, `*.key`, `agent.db`, `*.p12`, `*.pfx`).
-- Resolved paths must remain inside the intended root — mirror the
-  `startswith`-on-resolved-path guard in `app/agents/codex.py`.
+- Resolved paths must remain inside the intended root. Use resolved `Path`
+  containment (`is_relative_to`), not string prefixes: a sibling such as
+  `Allowed-Private` is not inside `Allowed`. Test symlinks and Windows paths.
 - `delete_workspace` (`shutil.rmtree`) only on paths the WorkspaceManager owns.
 
 ### Subprocess execution

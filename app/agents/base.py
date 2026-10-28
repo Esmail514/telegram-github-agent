@@ -34,6 +34,8 @@ class AgentContext:
 
     # Constraints
     max_fix_iterations: int = 5
+    model: str | None = None
+    reasoning_effort: str | None = None
 
 
 @dataclass
@@ -108,7 +110,12 @@ class BaseAgent(ABC):
                 parts.append(f"### {fname}\n```\n{content[:2000]}\n```")
             key_files_str = "\n\n".join(parts)
 
-        return f"""You are an AI coding agent working on a GitHub repository.
+        task_heading = "Local Scheduled Task" if context.issue_number == 0 else f"Issue #{context.issue_number}"
+        objective = context.issue_body if context.issue_number == 0 else (
+            f'Implement Issue #{context.issue_number}: "{context.issue_title}" completely.'
+        )
+
+        return f"""You are an AI coding agent working on a repository.
 
 ## Repository
 
@@ -118,7 +125,7 @@ Description: {context.repo_description}
 Default branch: {context.default_branch}
 Working branch: {context.branch}
 
-## Issue
+## {task_heading}
 
 Number: #{context.issue_number}
 Title: {context.issue_title}
@@ -140,7 +147,7 @@ Labels: {labels_str}
 
 ## Your Objective
 
-Implement Issue #{context.issue_number}: "{context.issue_title}" completely.
+{objective}
 
 ## Instructions
 
@@ -156,7 +163,7 @@ Implement Issue #{context.issue_number}: "{context.issue_title}" completely.
 10. Fix all problems caused by your implementation.
 11. Re-run validation after every fix.
 12. Review the final git diff before finishing.
-13. Do NOT modify files unrelated to this issue.
+13. Do NOT modify files unrelated to this task.
 14. Do NOT commit secrets, credentials, API keys, or tokens.
 15. Do NOT push to main or master — your branch is: {context.branch}
 16. Stop when the implementation is complete and all validation passes.

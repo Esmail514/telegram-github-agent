@@ -13,6 +13,8 @@ import shutil
 from pathlib import Path
 
 from app.agents.base import AgentContext, AgentResult, BaseAgent, ProgressCallback
+from app.agents.output_capture import OutputCapture
+from app.agents.process_cleanup import finish_process, terminate_process
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -27,11 +29,7 @@ class AntigravityAgent(BaseAgent):
 
     async def stop(self) -> None:
         self._stopped = True
-        if self._process and self._process.returncode is None:
-            try:
-                self._process.terminate()
-            except ProcessLookupError:
-                pass
+        await terminate_process(self._process)
 
     async def run(
         self,
@@ -44,25 +42,8 @@ class AntigravityAgent(BaseAgent):
 
         cmd_name = settings.ANTIGRAVITY_COMMAND
 
-        # Verify if command is available on PATH or standard install paths
-        cmd_path = shutil.which(cmd_name)
-        if not cmd_path:
-            for candidate in ("antigravity", "agy", "antigravity-ide"):
-                resolved = shutil.which(candidate)
-                if resolved:
-                    cmd_path = resolved
-                    break
-
-        if not cmd_path:
-            ide_cmd = (
-                Path(os.environ.get("LOCALAPPDATA", ""))
-                / "Programs"
-                / "Antigravity IDE"
-                / "bin"
-                / "antigravity-ide.cmd"
-            )
-            if ide_cmd.exists():
-                cmd_path = str(ide_cmd)
+        # Only documented Antigravity CLI executables may run work.
+        cmd_path = _resolve_antigravity_cli(cmd_name)
 
         prompt_file = workspace_path / ".antigravity_task.md"
         is_continuation = prompt_file.exists()
@@ -92,8 +73,9 @@ class AntigravityAgent(BaseAgent):
         env = os.environ.copy()
         env.update(settings.get_agent_env())
 
-        collected_output: list[str] = []
-        error_output: list[str] = []
+        collected_output = OutputCapture()
+        error_output = OutputCapture()
+        readers: list[asyncio.Task] = []
 
         try:
             self._process = await asyncio.create_subprocess_exec(
@@ -106,23 +88,9 @@ class AntigravityAgent(BaseAgent):
 
             await on_progress("🔍 Antigravity CLI is inspecting and implementing changes...")
 
-            async def read_stream(stream: asyncio.StreamReader | None, target_list: list[str], is_stderr: bool = False) -> None:
-                if not stream:
-                    return
-                while not stream.at_eof():
-                    line = await stream.readline()
-                    if not line:
-                        break
-                    decoded = line.decode(errors="replace").rstrip()
-                    if decoded:
-                        target_list.append(decoded)
-                        if is_stderr:
-                            logger.debug("[antigravity stderr] %s", decoded)
-                        else:
-                            logger.debug("[antigravity stdout] %s", decoded)
-
-            stdout_task = asyncio.create_task(read_stream(self._process.stdout, collected_output, False))
-            stderr_task = asyncio.create_task(read_stream(self._process.stderr, error_output, True))
+            stdout_task = asyncio.create_task(collected_output.drain(self._process.stdout))
+            stderr_task = asyncio.create_task(error_output.drain(self._process.stderr))
+            readers.extend((stdout_task, stderr_task))
 
             timeout_secs = settings.MAX_AGENT_RUNTIME_MINUTES * 60
             try:
@@ -141,23 +109,7 @@ class AntigravityAgent(BaseAgent):
             exit_code = self._process.returncode or 0
             success = exit_code == 0 and not self._stopped
 
-            token_limit_keywords = (
-                "quota exceeded",
-                "resource exhausted",
-                "resource_exhausted",
-                "rate limit",
-                "ratelimit",
-                "token limit",
-                "out of tokens",
-                "429",
-                "insufficient quota",
-                "capacity exhausted",
-                "exceeded your current quota",
-                "too many requests",
-                "credit balance is too low",
-            )
-            all_text = ("\n".join(collected_output) + "\n" + "\n".join(error_output)).lower()
-            token_exhausted = any(k in all_text for k in token_limit_keywords)
+            token_exhausted = collected_output.token_exhausted or error_output.token_exhausted
 
             if not success and token_exhausted:
                 return AgentResult(
@@ -165,18 +117,18 @@ class AntigravityAgent(BaseAgent):
                     exit_code=-2,
                     summary="Antigravity account token limit / quota reached.",
                     error="Account token limit or quota exceeded. Switch Antigravity account to continue.",
-                    raw_output="\n".join(collected_output[-100:]),
+                    raw_output=collected_output.last_lines(100),
                     token_exhausted=True,
                 )
 
-            summary_text = "\n".join(collected_output[-15:]) if collected_output else "Antigravity CLI completed."
+            summary_text = collected_output.last_lines(15) or "Antigravity CLI completed."
 
             return AgentResult(
                 success=success,
                 exit_code=exit_code,
                 summary=summary_text,
-                error=("\n".join(error_output[-10:]) if not success else None),
-                raw_output="\n".join(collected_output[-100:]),
+                error=(error_output.last_lines(10) if not success else None),
+                raw_output=collected_output.last_lines(100),
                 token_exhausted=token_exhausted,
             )
 
@@ -202,4 +154,16 @@ class AntigravityAgent(BaseAgent):
                 error=str(exc),
             )
         finally:
-            prompt_file.unlink(missing_ok=True)
+            try:
+                await finish_process(self._process, readers)
+            finally:
+                prompt_file.unlink(missing_ok=True)
+
+
+def _resolve_antigravity_cli(configured_command: str) -> str | None:
+    """Find only supported Antigravity CLI executables on PATH."""
+    for candidate in dict.fromkeys((configured_command, "agy", "antigravity")):
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return None

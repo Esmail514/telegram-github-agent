@@ -15,11 +15,12 @@ async def test_polish_antigravity_generator_success(monkeypatch):
     settings_module._settings_instance = None
 
     polisher = IssuePolisher()
-    result = await polisher.polish(
-        repo_full_name="owner/repo",
-        title="crash during user login",
-        body="login fails with 500 internal server error on submit",
-    )
+    with patch.object(polisher, "_resolve_antigravity_executable", return_value=None):
+        result = await polisher.polish(
+            repo_full_name="owner/repo",
+            title="crash during user login",
+            body="login fails with 500 internal server error on submit",
+        )
 
     assert isinstance(result, PolishedIssue)
     assert result.title.startswith("fix:")
@@ -39,11 +40,12 @@ async def test_polish_antigravity_feature_request(monkeypatch):
     settings_module._settings_instance = None
 
     polisher = IssuePolisher()
-    result = await polisher.polish(
-        repo_full_name="owner/repo",
-        title="add export to csv button",
-        body="users want to export their transaction history to a csv file",
-    )
+    with patch.object(polisher, "_resolve_antigravity_executable", return_value=None):
+        result = await polisher.polish(
+            repo_full_name="owner/repo",
+            title="add export to csv button",
+            body="users want to export their transaction history to a csv file",
+        )
 
     assert isinstance(result, PolishedIssue)
     assert result.title.startswith("feat:")

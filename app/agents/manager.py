@@ -7,19 +7,13 @@ import logging
 
 from app.agents.antigravity import AntigravityAgent
 from app.agents.base import BaseAgent
-from app.agents.claude import ClaudeAgent
 from app.agents.codex import CodexAgent
-from app.agents.gemini import GeminiAgent
-from app.agents.opencode import OpenCodeAgent
 
 logger = logging.getLogger(__name__)
 
 _REGISTRY: dict[str, type[BaseAgent]] = {
     "antigravity": AntigravityAgent,
     "codex": CodexAgent,
-    "claude": ClaudeAgent,
-    "gemini": GeminiAgent,
-    "opencode": OpenCodeAgent,
 }
 
 

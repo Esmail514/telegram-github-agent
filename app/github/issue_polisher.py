@@ -17,7 +17,6 @@ import os
 import re
 import shutil
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import httpx
 
@@ -158,30 +157,11 @@ class IssuePolisher:
         from app.config.settings import settings
 
         cmd_name = settings.ANTIGRAVITY_COMMAND
-        for candidate in [
-            cmd_name,
-            "agy",
-            "antigravity",
-            "antigravity-ide",
-        ]:
+        for candidate in dict.fromkeys((cmd_name, "agy", "antigravity")):
             if candidate:
                 resolved = shutil.which(candidate)
                 if resolved:
                     return resolved
-
-        # Standard Windows installation paths
-        local_app = os.environ.get("LOCALAPPDATA", "")
-        if local_app:
-            ide_cmd = (
-                Path(local_app)
-                / "Programs"
-                / "Antigravity IDE"
-                / "bin"
-                / "antigravity-ide.cmd"
-            )
-            if ide_cmd.exists():
-                return str(ide_cmd)
-
         return None
 
     async def _call_antigravity_cli(self, executable: str, user_msg: str) -> str:
@@ -209,14 +189,15 @@ class IssuePolisher:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=30)
         except TimeoutError as err:
             proc.kill()
+            await proc.wait()
             raise TimeoutError("Antigravity CLI timed out while polishing issue.") from err
 
         out = stdout_bytes.decode(errors="replace").strip()
         if "{" in out and "}" in out:
             return out
 
-        err = stderr_bytes.decode(errors="replace").strip()
-        raise RuntimeError(f"Antigravity CLI returned no JSON. Exit code: {proc.returncode}. Stderr: {err[:200]}")
+        error_text = stderr_bytes.decode(errors="replace").strip()
+        raise RuntimeError(f"Antigravity CLI returned no JSON. Exit code: {proc.returncode}. Stderr: {error_text[:200]}")
 
     async def _call_antigravity(
         self,
@@ -527,7 +508,7 @@ class IssuePolisher:
         }
 
         async with httpx.AsyncClient(timeout=60) as client:
-            last_exc = None
+            last_exc: httpx.HTTPError | None = None
             for attempt in range(2):
                 try:
                     response = await client.post(url, headers={"Content-Type": "application/json"}, json=payload)
@@ -550,6 +531,7 @@ class IssuePolisher:
                     raise
             if last_exc:
                 raise last_exc
+            raise RuntimeError("Gemini returned no response.")
 
     # ------------------------------------------------------------------
     # Response parsing

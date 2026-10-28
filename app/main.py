@@ -57,23 +57,43 @@ async def _async_main(*, reload_enabled: bool = False) -> bool:
 
     # ---- Build job executor -------------------------------------------
     from app.runner.executor import JobExecutor
-    executor = JobExecutor(db)
+    from app.runner.recovery import RecoveryService
+    try:
+        recovered = await RecoveryService.recover(db)
+        logger.info("Recovered %d interrupted job(s)", len(recovered))
+        executor = JobExecutor(db)
+    except BaseException:
+        await db.close()
+        raise
 
     # ---- Build Telegram application ------------------------------------
     from app.telegram.bot import build_application
     token = settings.TELEGRAM_BOT_TOKEN.get_secret_value()
-    app = build_application(token)
-
-    # Inject executor and db into bot_data (accessible in all handlers)
-    app.bot_data["executor"] = executor
-    app.bot_data["db"] = db
-
-    logger.info("Bot is starting — allowed user ID: %d", settings.TELEGRAM_ALLOWED_USER_ID)
-
-    # ---- Start polling --------------------------------------------------
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(drop_pending_updates=True)  # type: ignore[union-attr]
+    app = None
+    initialized = started = False
+    try:
+        app = build_application(token)
+        app.bot_data["executor"] = executor
+        app.bot_data["db"] = db
+        logger.info("Bot is starting — allowed user ID: %d", settings.TELEGRAM_ALLOWED_USER_ID)
+        await app.initialize()
+        initialized = True
+        await app.start()
+        started = True
+        await app.updater.start_polling(drop_pending_updates=True)  # type: ignore[union-attr]
+    except BaseException:
+        try:
+            await executor.shutdown()
+            if app is not None:
+                if app.updater is not None and app.updater.running:
+                    await app.updater.stop()
+                if started:
+                    await app.stop()
+                if initialized:
+                    await app.shutdown()
+        finally:
+            await db.close()
+        raise
 
     # ---- Start background job scheduler --------------------------------
     from app.runner.scheduler import job_scheduler
@@ -88,31 +108,16 @@ async def _async_main(*, reload_enabled: bool = False) -> bool:
     # ---- Send startup notification -------------------------------------
     if settings.NOTIFY_ON_STARTUP:
         try:
-            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-            from app.database.schedule_repository import ScheduleRepository
-
-            sched_repo = ScheduleRepository(db)
-            pending_jobs = await sched_repo.list_all_pending()
-            pending_count = len(pending_jobs)
+            from app.telegram.keyboards import main_menu_keyboard
 
             startup_text = (
-                "*البوت متصل*\n"
-                f"Agent: `{settings.DEFAULT_AGENT}`\n"
-                f"المهام المجدولة: *{pending_count}*"
+                "🤖 *البوت متصل*\nاختر الخدمة من الأزرار أدناه."
             )
-
-            startup_keyboard = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("القائمة", callback_data="menu:start"),
-                    InlineKeyboardButton("المهام المجدولة", callback_data="menu:schedule"),
-                ]
-            ])
 
             await app.bot.send_message(
                 chat_id=settings.TELEGRAM_ALLOWED_USER_ID,
                 text=startup_text,
-                reply_markup=startup_keyboard,
+                reply_markup=main_menu_keyboard(),
                 parse_mode="Markdown",
             )
             logger.info("Startup notification sent to user %d", settings.TELEGRAM_ALLOWED_USER_ID)
@@ -166,7 +171,7 @@ async def _async_main(*, reload_enabled: bool = False) -> bool:
                     "Reload deferred until active job %s finishes",
                     active_job.job_id,
                 )
-            while active_job is not None and not shutdown_event.is_set():
+            while await executor.is_busy() and not shutdown_event.is_set():
                 try:
                     await asyncio.wait_for(shutdown_event.wait(), timeout=1.0)
                 except TimeoutError:
@@ -202,11 +207,13 @@ async def _async_main(*, reload_enabled: bool = False) -> bool:
             except Exception as exc:
                 logger.warning("Failed to send shutdown notification: %s", exc)
 
-        job_scheduler.stop()
-        await app.updater.stop()  # type: ignore[union-attr]
-        await app.stop()
-        await app.shutdown()
-        await db.close()
+        async with contextlib.AsyncExitStack() as cleanup:
+            cleanup.push_async_callback(db.close)
+            cleanup.push_async_callback(app.shutdown)
+            cleanup.push_async_callback(app.stop)
+            cleanup.push_async_callback(executor.shutdown)
+            cleanup.push_async_callback(job_scheduler.shutdown)
+            cleanup.push_async_callback(app.updater.stop)  # type: ignore[union-attr]
         logger.info("Shutdown complete")
     return reload_requested
 

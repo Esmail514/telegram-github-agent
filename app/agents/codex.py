@@ -2,7 +2,7 @@
 Codex CLI Agent implementation.
 
 Supports running Codex via:
-1. Codex CLI executable (e.g. `codex run ...` or `codex --task ...` on PATH)
+1. Codex CLI executable (`codex exec ...` on PATH)
 2. Direct autonomous OpenAI execution via httpx fallback if OPENAI_API_KEY is provided
 """
 from __future__ import annotations
@@ -19,12 +19,30 @@ from typing import Any
 import httpx
 
 from app.agents.base import AgentContext, AgentResult, BaseAgent, ProgressCallback
+from app.agents.output_capture import OutputCapture
+from app.agents.process_cleanup import finish_process, terminate_process
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CODEX_MODEL = "gpt-4o"
+DEFAULT_CLI_CODEX_MODEL = "gpt-5.6-terra"
 OPENAI_API_BASE = "https://api.openai.com/v1"
+
+
+def build_codex_cli_command(executable: str, model: str, reasoning_effort: str) -> list[str]:
+    """Build a non-interactive, workspace-scoped Codex CLI invocation."""
+    return [
+        executable,
+        "exec",
+        "--json",
+        "--full-auto",
+        "--model",
+        model,
+        "-c",
+        f'model_reasoning_effort="{reasoning_effort}"',
+        "-",
+    ]
 
 
 class CodexAgent(BaseAgent):
@@ -36,11 +54,7 @@ class CodexAgent(BaseAgent):
 
     async def stop(self) -> None:
         self._stopped = True
-        if self._active_proc and self._active_proc.returncode is None:
-            try:
-                self._active_proc.terminate()
-            except ProcessLookupError:
-                pass
+        await terminate_process(self._active_proc)
 
     async def run(
         self,
@@ -57,7 +71,14 @@ class CodexAgent(BaseAgent):
         # 1. Check if a local Codex CLI executable is available on PATH
         cli_executable = shutil.which(cmd_name)
         if cli_executable:
-            return await self._run_cli(cli_executable, prompt, workspace_path, on_progress)
+            return await self._run_cli(
+                cli_executable,
+                prompt,
+                workspace_path,
+                on_progress,
+                model=context.model or DEFAULT_CLI_CODEX_MODEL,
+                reasoning_effort=context.reasoning_effort or "high",
+            )
 
         # 2. Fallback to direct OpenAI execution if API key is provided
         api_key_secret = settings.OPENAI_API_KEY
@@ -83,43 +104,39 @@ class CodexAgent(BaseAgent):
         prompt: str,
         workspace_path: Path,
         on_progress: ProgressCallback,
+        model: str,
+        reasoning_effort: str,
     ) -> AgentResult:
-        await on_progress(f"🤖 Launching Codex CLI ({executable})...")
+        await on_progress(f"Launching Codex ({model}, {reasoning_effort})...")
 
-        prompt_file = workspace_path / ".codex_task.md"
-        prompt_file.write_text(prompt, encoding="utf-8")
-
-        full_cmd = [executable, "run", f"@{prompt_file.name}"]
+        full_cmd = build_codex_cli_command(executable, model, reasoning_effort)
         env = os.environ.copy()
         env.update(settings.get_agent_env())
 
-        collected_output: list[str] = []
-        error_output: list[str] = []
+        collected_output = OutputCapture()
+        error_output = OutputCapture()
+        readers: list[asyncio.Task] = []
 
         try:
             self._active_proc = await asyncio.create_subprocess_exec(
                 *full_cmd,
                 cwd=str(workspace_path),
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
             )
 
-            await on_progress("🔍 Codex CLI is implementing changes...")
+            if self._active_proc.stdin is not None:
+                self._active_proc.stdin.write(prompt.encode("utf-8"))
+                await self._active_proc.stdin.drain()
+                self._active_proc.stdin.close()
 
-            async def read_stream(stream: asyncio.StreamReader | None, target_list: list[str]) -> None:
-                if not stream:
-                    return
-                while not stream.at_eof():
-                    line = await stream.readline()
-                    if not line:
-                        break
-                    decoded = line.decode(errors="replace").rstrip()
-                    if decoded:
-                        target_list.append(decoded)
+            await on_progress("Codex is implementing changes...")
 
-            stdout_task = asyncio.create_task(read_stream(self._active_proc.stdout, collected_output))
-            stderr_task = asyncio.create_task(read_stream(self._active_proc.stderr, error_output))
+            stdout_task = asyncio.create_task(collected_output.drain(self._active_proc.stdout))
+            stderr_task = asyncio.create_task(error_output.drain(self._active_proc.stderr))
+            readers.extend((stdout_task, stderr_task))
 
             timeout_secs = settings.MAX_AGENT_RUNTIME_MINUTES * 60
             try:
@@ -141,12 +158,29 @@ class CodexAgent(BaseAgent):
             return AgentResult(
                 success=success,
                 exit_code=exit_code,
-                summary="\n".join(collected_output[-15:]) if collected_output else "Codex CLI finished.",
-                error="\n".join(error_output[-10:]) if not success else None,
-                raw_output="\n".join(collected_output[-100:]),
+                summary=collected_output.last_lines(15) or "Codex CLI finished.",
+                error=error_output.last_lines(10) if not success else None,
+                raw_output=collected_output.last_lines(100),
+                token_exhausted=collected_output.token_exhausted or error_output.token_exhausted,
+            )
+
+        except FileNotFoundError:
+            return AgentResult(
+                success=False,
+                exit_code=-1,
+                summary="Codex not available",
+                error=f"Codex CLI ('{executable}') was not found.",
+            )
+        except Exception as exc:
+            logger.exception("Codex CLI execution failed: %s", exc)
+            return AgentResult(
+                success=False,
+                exit_code=-1,
+                summary="Codex CLI failed",
+                error=str(exc),
             )
         finally:
-            prompt_file.unlink(missing_ok=True)
+            await finish_process(self._active_proc, readers)
 
     async def _run_direct_api(
         self,
@@ -156,8 +190,8 @@ class CodexAgent(BaseAgent):
         workspace_path: Path,
         on_progress: ProgressCallback,
     ) -> AgentResult:
-        model = os.environ.get("CODEX_MODEL", DEFAULT_CODEX_MODEL)
-        await on_progress(f"🤖 Running Codex agent ({model})...")
+        model = context.model or os.environ.get("CODEX_MODEL", DEFAULT_CODEX_MODEL)
+        await on_progress(f"Running Codex agent ({model})...")
 
         system_instruction = (
             "You are an expert autonomous software engineer. "
@@ -173,7 +207,7 @@ class CodexAgent(BaseAgent):
             "Content-Type": "application/json",
         }
 
-        await on_progress("🔍 Codex is planning and generating changes...")
+        await on_progress("Codex is planning and generating changes...")
 
         payload = {
             "model": model,
@@ -220,7 +254,7 @@ class CodexAgent(BaseAgent):
             file_content = file_info.get("content")
             if rel_path and file_content is not None:
                 target_file = (workspace_path / rel_path).resolve()
-                if str(target_file).startswith(str(workspace_path.resolve())):
+                if target_file.is_relative_to(workspace_path.resolve()):
                     target_file.parent.mkdir(parents=True, exist_ok=True)
                     target_file.write_text(file_content, encoding="utf-8")
                     modified_paths.append(rel_path)

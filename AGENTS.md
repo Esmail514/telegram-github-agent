@@ -30,6 +30,7 @@ Iterate `systematic-debugger ⇄ test-driven-fixer` until green; do not skip to
 
 | Task signal | Route to |
 |---|---|
+| Repository orientation, full-project review, cross-layer source/data map | telegram-controller-project-guide |
 | Raw GitHub issue, vague bug report, feature request | issue-analyzer |
 | "Plan this", "design the fix", multi-file change | implementation-planner |
 | Bug fix expressible as a test | test-driven-fixer |
@@ -43,8 +44,9 @@ Iterate `systematic-debugger ⇄ test-driven-fixer` until green; do not skip to
 | Editing/creating/renaming a skill in `.agents/skills/` | skill-maintainer |
 | Long-running agent implementation via `agy` | antigravity-coding-agent |
 
-Domains route to the three pre-existing skills; process skills (the 8 above)
-drive the workflow. Process skills hand off, never overlap: each SKILL.md has
+Domains route to specialized skills; telegram-controller-project-guide supplies
+repository context without replacing them. Process skills (the 8 above) drive
+the workflow. Process skills hand off, never overlap: each SKILL.md has
 a "When NOT to use" section enforcing that.
 
 ## 3. Trust boundary

@@ -8,7 +8,7 @@ description: >-
 
 # Antigravity Coding Agent Skill
 
-This skill explains how Antigravity (`agy` / `antigravity` / `antigravity-ide`) operates
+This skill explains how Antigravity CLI (`agy` / `antigravity`) operates
 within this repository as the primary autonomous agent and issue shaper.
 
 ## 1. Execution Architecture
@@ -24,7 +24,9 @@ When a user launches `/run` on an issue:
    agy --prompt "<task_prompt>"
    ```
 4. **Progress Streaming**: Stderr and stdout streams are decoded line-by-line and sent to Telegram via `on_progress` callbacks.
-5. **Validation**: The agent inspects `git status`, commits changes, pushes the branch, and opens a Pull Request.
+5. **Controller workflow**: `JobExecutor` performs verification, approval gates,
+   secret-scanned commits, and applicable push/PR actions. A local-only scheduled
+   prompt stops after its local commit; it must remain local-only on resume.
 
 ### Mode B: Issue Crafting & Polishing Service
 When a user drafts an issue or taps "✨ Polish with AI":
@@ -42,12 +44,10 @@ When a user drafts an issue or taps "✨ Polish with AI":
 
 ## 2. CLI Candidate Discovery
 
-On Windows systems, Antigravity CLI executables are detected in this precedence:
-1. `settings.ANTIGRAVITY_COMMAND` (from `.env`)
-2. `shutil.which("antigravity")`
-3. `shutil.which("agy")`
-4. `shutil.which("antigravity-ide")`
-5. `%LOCALAPPDATA%\Programs\Antigravity IDE\bin\antigravity-ide.cmd`
+`app/agents/antigravity.py::_resolve_antigravity_cli` checks PATH candidates in
+this order: configured `ANTIGRAVITY_COMMAND`, `agy`, then `antigravity`, without
+duplicates. Desktop/IDE discovery and GUI automation are not supported execution
+paths. Do not reintroduce `antigravity-ide` or install-directory fallbacks.
 
 ---
 
@@ -55,8 +55,9 @@ On Windows systems, Antigravity CLI executables are detected in this precedence:
 
 Autonomous agent processes run with safety bounds:
 - **Timeout**: Enforced via `asyncio.wait_for(process.wait(), timeout=settings.MAX_AGENT_RUNTIME_MINUTES * 60)`.
-- **Termination**: If user issues `/stop` in Telegram, `AntigravityAgent.stop()` sends `process.terminate()`.
-- **Cleanup**: Prompt files (`.antigravity_task.md`) are deleted in the `finally:` block.
+- **Termination**: Shared cleanup terminates and reaps the process, escalating
+  to kill after a bounded wait. External cancellation must take the same path.
+- **Cleanup**: Reader tasks and `.antigravity_task.md` are cleaned in `finally`.
 - **Workspace Preserved**: The cloned directory is preserved for user manual inspection if needed.
 
 See [agent_prompting.md](./references/agent_prompting.md) for task prompt templates.

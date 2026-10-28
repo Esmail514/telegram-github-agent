@@ -289,18 +289,14 @@ async def polish_apply_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     if source == "newissue":
-        # Update the draft that lives in ni_* user_data, then tell user to confirm
+        from app.telegram.handlers.newissue import _show_confirm
+
         if context.user_data is not None:
             context.user_data["ni_title"] = title
             context.user_data["ni_body"] = body
             context.user_data["ni_labels"] = labels
-        await query.edit_message_text(
-            " *تم تحديث المسودة بصياغة الذكاء الاصطناعي!*\n\n"
-            f"*العنوان:* {title}\n\n"
-            "تم تطبيق المحتوى المحسن على مسودتك. "
-            "استخدم /newissue للمتابعة وإنشاء الـ Issue.",
-            parse_mode="Markdown",
-        )
+        await _show_confirm(update, context)
+        _clear_polish_data(context)
         return
 
     # Existing issue — apply via GitHub API

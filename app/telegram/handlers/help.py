@@ -3,14 +3,14 @@
 """
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import ContextTypes
 
 from app.telegram.auth import auth_required
 
 HELP_TEXT = """\
 *الأوامر الأساسية*
-/start القائمة الرئيسية
+/start عرض لوحة الأزرار
 /status حالة المهمة
 /stop إيقاف المهمة
 /projects المشاريع المحلية
@@ -48,12 +48,5 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     active, _ = is_personal_mode_active()
     if active:
         text = text + PERSONAL_HELP_SECTION
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("القائمة الرئيسية", callback_data="menu:start")]
-    ])
-    await update.message.reply_text(
-        text,
-        reply_markup=keyboard,
-        parse_mode="Markdown",
-    )
+    await update.message.reply_text(text, parse_mode="Markdown")
 

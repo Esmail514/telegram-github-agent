@@ -58,6 +58,8 @@ class AgentContextBuilder:
         branch: str,
         workspace_path: Path,
         max_fix_iterations: int = 5,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> AgentContext:
         structure = self._build_tree(workspace_path)
         key_files = self._read_key_files(workspace_path)
@@ -75,6 +77,8 @@ class AgentContextBuilder:
             repo_structure=structure,
             key_files=key_files,
             max_fix_iterations=max_fix_iterations,
+            model=model,
+            reasoning_effort=reasoning_effort,
         )
 
     def _build_tree(self, root: Path, depth: int = 0, prefix: str = "") -> str:

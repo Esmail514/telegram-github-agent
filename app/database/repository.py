@@ -344,6 +344,117 @@ class SelectedProjectRepository:
             row = await cursor.fetchone()
         return SelectedProject(**dict(row)) if row else None
 
+    async def clear_paths(self) -> int:
+        """Blank stored project paths while preserving every selected-project record."""
+        cursor = await self._db.conn.execute(
+            "UPDATE selected_projects SET path = '', updated_at = ? WHERE path <> ''",
+            (_now(),),
+        )
+        await self._db.conn.commit()
+        return cursor.rowcount
+
+
+@dataclass
+class SavedProject:
+    id: int
+    user_id: int
+    name: str
+    path: str
+    repo_full_name: str | None
+    updated_at: str
+
+
+class SavedProjectRepository:
+    """Persists a list of named git projects per user (many per user_id)."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def add(
+        self,
+        user_id: int,
+        name: str,
+        path: str,
+        repo_full_name: str | None,
+    ) -> SavedProject:
+        """Insert or replace a saved project. Returns the saved project."""
+        cursor = await self._db.conn.execute(
+            """
+            INSERT INTO saved_projects (user_id, name, path, repo_full_name, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, path) DO UPDATE SET
+                name       = excluded.name,
+                repo_full_name = excluded.repo_full_name,
+                updated_at = excluded.updated_at
+            RETURNING *
+            """,
+            (user_id, name, path, repo_full_name, _now()),
+        )
+        row = await cursor.fetchone()
+        await self._db.conn.commit()
+        assert row is not None
+        return SavedProject(**dict(row))
+
+    async def list_projects(self, user_id: int) -> list[SavedProject]:
+        async with self._db.conn.execute(
+            "SELECT * FROM saved_projects WHERE user_id = ? ORDER BY id ASC",
+            (user_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [SavedProject(**dict(r)) for r in rows]
+
+    async def list_all_projects(self) -> list[SavedProject]:
+        async with self._db.conn.execute("SELECT * FROM saved_projects ORDER BY id ASC") as cursor:
+            rows = await cursor.fetchall()
+        return [SavedProject(**dict(r)) for r in rows]
+
+    async def get_by_id(self, project_id: int) -> SavedProject | None:
+        async with self._db.conn.execute(
+            "SELECT * FROM saved_projects WHERE id = ?", (project_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return SavedProject(**dict(row)) if row else None
+
+    async def delete(self, project_id: int) -> None:
+        await self._db.conn.execute(
+            "DELETE FROM saved_projects WHERE id = ?", (project_id,)
+        )
+        await self._db.conn.commit()
+
+
+@dataclass
+class ProjectRoot:
+    user_id: int
+    path: str
+    updated_at: str
+
+
+class ProjectRootRepository:
+    """Persists the confirmed projects root independently of a selected project."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def save(self, user_id: int, path: str) -> None:
+        await self._db.conn.execute(
+            """
+            INSERT INTO project_roots (user_id, path, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                path = excluded.path,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, path, _now()),
+        )
+        await self._db.conn.commit()
+
+    async def get(self, user_id: int) -> ProjectRoot | None:
+        async with self._db.conn.execute(
+            "SELECT * FROM project_roots WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return ProjectRoot(**dict(row)) if row else None
+
 
 # ---------------------------------------------------------------------------
 # Structured job events (live progress + /logs)

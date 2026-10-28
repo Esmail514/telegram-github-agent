@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 
 from app.github.client import RepoInfo, github_client
 from app.telegram.auth import auth_required
+from app.telegram.callback_payloads import decode_callback_payload, encode_callback_payload
 from app.telegram.keyboards import CB_REPO, CB_REPO_PAGE, repos_keyboard
 
 logger = logging.getLogger(__name__)
@@ -80,9 +81,10 @@ async def repo_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     """User tapped a repository — store selection and show repo info."""
     query = update.callback_query
     assert query
+    full_name = await decode_callback_payload(query, CB_REPO)
+    if full_name is None:
+        return
     await query.answer()
-
-    full_name = (query.data or "").replace(CB_REPO, "")
     if context.user_data is not None:
         context.user_data["selected_repo"] = full_name
 
@@ -101,16 +103,15 @@ async def repo_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("عرض الـ Issues", callback_data=f"issues_for:{full_name}"),
-                InlineKeyboardButton("Issue جديد", callback_data=f"newissue_for:{full_name}"),
+                InlineKeyboardButton("عرض الـ Issues", callback_data=encode_callback_payload("issues_for:", full_name)),
+                InlineKeyboardButton("Issue جديد", callback_data=encode_callback_payload("newissue_for:", full_name)),
             ],
             [
-                InlineKeyboardButton("تشغيل الـ Agent", callback_data=f"run_for:{full_name}"),
-                InlineKeyboardButton("الـ Pull Requests", callback_data=f"prs_for:{full_name}"),
+                InlineKeyboardButton("تشغيل الـ Agent", callback_data=encode_callback_payload("run_for:", full_name)),
+                InlineKeyboardButton("الـ Pull Requests", callback_data=encode_callback_payload("prs_for:", full_name)),
             ],
             [
                 InlineKeyboardButton("رجوع للمستودعات", callback_data="menu:repos"),
-                InlineKeyboardButton("القائمة الرئيسية", callback_data="menu:start"),
             ],
         ])
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")

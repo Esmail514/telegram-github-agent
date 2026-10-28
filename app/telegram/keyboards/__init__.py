@@ -5,11 +5,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 from app.github.client import RepoInfo
 from app.github.issues import IssueInfo
 from app.github.pull_requests import PRInfo
+from app.telegram.callback_payloads import encode_callback_payload
 
 if TYPE_CHECKING:
     from app.runner.project_scanner import LocalProject
@@ -38,6 +39,11 @@ CB_SETDIR = "cmd_setdir"
 CB_REFRESH_PROJ = "proj_refresh"
 CB_SCHEDULE_DEL = "sched_del:"
 CB_SCHEDULE_LIST = "sched_list"
+CB_SAVED_PROJ = "saved_proj:"
+CB_SAVED_PROJ_PAGE = "saved_proj_page:"
+CB_SAVED_PROJ_DEL = "saved_proj_del:"
+CB_SAVED_PROJ_DEL_CONFIRM = "saved_proj_del_confirm:"
+CB_ADD_PROJ = "proj_add"
 
 _REPOS_PER_PAGE = 8
 _PROJECTS_PER_PAGE = 8
@@ -45,35 +51,37 @@ _ISSUES_PER_PAGE = 10
 _PRS_PER_PAGE = 10
 
 
-def main_menu_button() -> InlineKeyboardButton:
-    """Standard return-to-main-menu button."""
-    return InlineKeyboardButton("القائمة الرئيسية", callback_data=CB_MENU)
+MAIN_MENU_GITHUB = "🐙 GitHub"
+MAIN_MENU_PROJECTS = "📁 المشاريع المحلية"
+MAIN_MENU_SCHEDULES = "📅 المهام المجدولة"
+MAIN_MENU_STATUS = "📊 حالة المهمة"
+MAIN_MENU_SYSTEM = "🖥️ موارد الجهاز"
+MAIN_MENU_PERSONAL = "💻 الاستخدام الشخصي"
 
 
-def main_menu_keyboard(personal_mode: bool = False) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+def main_menu_keyboard(personal_mode: bool = False) -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup([
         [
-            InlineKeyboardButton("GitHub", callback_data="menu:github"),
-            InlineKeyboardButton("المشاريع", callback_data="menu:projects"),
+            KeyboardButton(MAIN_MENU_GITHUB),
+            KeyboardButton(MAIN_MENU_PROJECTS),
         ],
         [
-            InlineKeyboardButton("المهام المجدولة", callback_data="sched_list"),
-            InlineKeyboardButton("حالة المهمة", callback_data="menu:status"),
+            KeyboardButton(MAIN_MENU_SCHEDULES),
+            KeyboardButton(MAIN_MENU_STATUS),
         ],
         [
-            InlineKeyboardButton("موارد الجهاز", callback_data="menu:sysinfo"),
-            InlineKeyboardButton("الاستخدام الشخصي", callback_data="menu:personal"),
+            KeyboardButton(MAIN_MENU_SYSTEM),
+            KeyboardButton(MAIN_MENU_PERSONAL),
         ],
-    ])
+    ], resize_keyboard=True, is_persistent=True)
 
 
 def github_menu_keyboard() -> InlineKeyboardMarkup:
-    """Submenu for all GitHub-related actions."""
+    """GitHub exposes scheduling-only actions; navigation stays on the bottom keyboard."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("تعديل Issue", callback_data="menu:issues")],
-        [InlineKeyboardButton("إنشاء Issue", callback_data="menu:newissue")],
-        [InlineKeyboardButton("جدولة Issue", callback_data="menu:schedule")],
-        [main_menu_button()],
+        [InlineKeyboardButton("📝 إنشاء Issue", callback_data="menu:newissue")],
+        [InlineKeyboardButton("📅 جدولة Issue", callback_data="menu:schedule:issue")],
+        [InlineKeyboardButton("🖥️ جدولة Prompt محلي", callback_data="menu:schedule:local")],
     ])
 
 
@@ -90,8 +98,8 @@ def repos_keyboard(
     for repo in repos:
         buttons.append([
             InlineKeyboardButton(
-                f"{' ' if repo.private else ''}{repo.name}",
-                callback_data=f"{callback_prefix}{repo.full_name}",
+                f"🔒 {repo.name}" if repo.private else repo.name,
+                callback_data=encode_callback_payload(callback_prefix, repo.full_name),
             )
         ])
 
@@ -103,12 +111,6 @@ def repos_keyboard(
         nav.append(InlineKeyboardButton("التالي ", callback_data=f"{page_prefix}{page + 1}"))
     if nav:
         buttons.append(nav)
-
-    if include_cancel:
-        buttons.append([
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
-            main_menu_button(),
-        ])
 
     return InlineKeyboardMarkup(buttons)
 
@@ -142,12 +144,6 @@ def issues_keyboard(
     if nav:
         buttons.append(nav)
 
-    if include_cancel:
-        buttons.append([
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
-            main_menu_button(),
-        ])
-
     return InlineKeyboardMarkup(buttons)
 
 
@@ -164,10 +160,6 @@ def confirm_run_keyboard(job_preview_id: str) -> InlineKeyboardMarkup:
                 "تشغيل Codex (CLI)",
                 callback_data=f"confirm_run:codex:{job_preview_id}",
             ),
-        ],
-        [
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
-            main_menu_button(),
         ],
     ])
 
@@ -187,10 +179,6 @@ def workspace_source_keyboard() -> InlineKeyboardMarkup:
                 callback_data=CB_WS_LOCAL,
             )
         ],
-        [
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
-            main_menu_button(),
-        ],
     ])
 
 
@@ -198,16 +186,13 @@ def confirm_issue_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("إنشاء الـ Issue", callback_data="newissue:confirm"),
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
         ],
-        [main_menu_button()],
     ])
 
 
 def issue_detail_keyboard(issue: IssueInfo) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("تعديل Issue", callback_data=f"{CB_POLISH}{issue.number}")],
-        [main_menu_button()],
     ])
 
 
@@ -217,10 +202,6 @@ def polish_result_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("تطبيق التعديل", callback_data=CB_POLISH_APPLY),
             InlineKeyboardButton("إعادة الصياغة", callback_data=CB_POLISH_REGEN),
-        ],
-        [
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
-            main_menu_button(),
         ],
     ])
 
@@ -232,20 +213,11 @@ def polish_newissue_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("إنشاء الآن", callback_data="newissue:confirm"),
             InlineKeyboardButton("تعديل المسودة", callback_data="polish_newissue"),
         ],
-        [
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
-            main_menu_button(),
-        ],
     ])
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
-            main_menu_button(),
-        ]
-    ])
+    return InlineKeyboardMarkup([])
 
 
 def status_keyboard(is_active: bool = False) -> InlineKeyboardMarkup:
@@ -255,7 +227,6 @@ def status_keyboard(is_active: bool = False) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton("إيقاف المهمة الحالية", callback_data="stop_job")])
     rows.append([
         InlineKeyboardButton("تحديث الحالة", callback_data="status:refresh"),
-        main_menu_button(),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -290,12 +261,6 @@ def prs_keyboard(
     if nav:
         buttons.append(nav)
 
-    if include_cancel:
-        buttons.append([
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
-            main_menu_button(),
-        ])
-
     return InlineKeyboardMarkup(buttons)
 
 
@@ -303,10 +268,9 @@ def pr_detail_keyboard(pr: PRInfo, repo_full_name: str) -> InlineKeyboardMarkup:
     """Keyboard shown on PR detail view."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("فتح على GitHub", url=pr.html_url)],
-        [InlineKeyboardButton("دمج الـ Pull Request", callback_data=f"{CB_MERGE_PR}{repo_full_name}:{pr.number}")],
+        [InlineKeyboardButton("دمج الـ Pull Request", callback_data=encode_callback_payload(CB_MERGE_PR, f"{repo_full_name}:{pr.number}"))],
         [
-            InlineKeyboardButton("رجوع للـ PRs", callback_data=f"prs_for:{repo_full_name}"),
-            main_menu_button(),
+            InlineKeyboardButton("رجوع للـ PRs", callback_data=encode_callback_payload("prs_for:", repo_full_name)),
         ],
     ])
 
@@ -315,8 +279,7 @@ def pr_action_keyboard(pr_url: str, repo_full_name: str, pr_number: int) -> Inli
     """Action keyboard attached to agent completion message."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("فتح الـ Pull Request", url=pr_url)],
-        [InlineKeyboardButton("دمج الـ Pull Request", callback_data=f"{CB_MERGE_PR}{repo_full_name}:{pr_number}")],
-        [main_menu_button()],
+        [InlineKeyboardButton("دمج الـ Pull Request", callback_data=encode_callback_payload(CB_MERGE_PR, f"{repo_full_name}:{pr_number}"))],
     ])
 
 
@@ -326,24 +289,20 @@ def merge_options_keyboard(repo_full_name: str, pr_number: int) -> InlineKeyboar
         [
             InlineKeyboardButton(
                 "دمج مع ضغط (Squash and Merge)",
-                callback_data=f"{CB_DO_MERGE}squash:{repo_full_name}:{pr_number}",
+                callback_data=encode_callback_payload(CB_DO_MERGE, f"squash:{repo_full_name}:{pr_number}"),
             )
         ],
         [
             InlineKeyboardButton(
                 "إنشاء التزام دمج (Merge Commit)",
-                callback_data=f"{CB_DO_MERGE}merge:{repo_full_name}:{pr_number}",
+                callback_data=encode_callback_payload(CB_DO_MERGE, f"merge:{repo_full_name}:{pr_number}"),
             )
         ],
         [
             InlineKeyboardButton(
                 "إعادة تأسيس ودمج (Rebase and Merge)",
-                callback_data=f"{CB_DO_MERGE}rebase:{repo_full_name}:{pr_number}",
+                callback_data=encode_callback_payload(CB_DO_MERGE, f"rebase:{repo_full_name}:{pr_number}"),
             )
-        ],
-        [
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
-            main_menu_button(),
         ],
     ])
 
@@ -388,12 +347,6 @@ def projects_keyboard(
     if action_row:
         buttons.append(action_row)
 
-    if include_cancel:
-        buttons.append([
-            InlineKeyboardButton("رجوع", callback_data=CB_CANCEL),
-            main_menu_button(),
-        ])
-
     return InlineKeyboardMarkup(buttons)
 
 
@@ -406,8 +359,8 @@ def project_detail_keyboard(
     rows: list[list[InlineKeyboardButton]] = []
     if has_github_remote and repo_full_name:
         rows.append([
-            InlineKeyboardButton("تعديل Issue", callback_data=f"issues_for:{repo_full_name}"),
-            InlineKeyboardButton("Issue جديد", callback_data=f"newissue_for:{repo_full_name}"),
+            InlineKeyboardButton("تعديل Issue", callback_data=encode_callback_payload("issues_for:", repo_full_name)),
+            InlineKeyboardButton("Issue جديد", callback_data=encode_callback_payload("newissue_for:", repo_full_name)),
         ])
         rows.append([
             InlineKeyboardButton("تشغيل الـ Agent", callback_data=f"run_proj:{project_idx}"),
@@ -418,9 +371,75 @@ def project_detail_keyboard(
         ])
     rows.append([
         InlineKeyboardButton("رجوع للمشاريع", callback_data="menu:projects"),
-        main_menu_button(),
     ])
     return InlineKeyboardMarkup(rows)
+
+
+# ---------------------------------------------------------------------------
+# Saved Projects keyboards
+# ---------------------------------------------------------------------------
+
+def saved_projects_keyboard(
+    projects: list,
+    page: int = 0,
+    page_size: int = 8,
+) -> InlineKeyboardMarkup:
+    """List of saved projects with add and paginate buttons."""
+    rows: list[list[InlineKeyboardButton]] = []
+    start = page * page_size
+    for idx, proj in enumerate(projects[start : start + page_size], start=start + 1):
+        label = f"{idx}. {proj.name}"
+        rows.append([InlineKeyboardButton(label, callback_data=f"{CB_SAVED_PROJ}{proj.id}")])
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("السابق", callback_data=f"{CB_SAVED_PROJ_PAGE}{page - 1}"))
+    if start + page_size < len(projects):
+        nav.append(InlineKeyboardButton("التالي", callback_data=f"{CB_SAVED_PROJ_PAGE}{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("إضافة مشروع", callback_data=CB_ADD_PROJ)])
+    return InlineKeyboardMarkup(rows)
+
+
+def saved_project_detail_keyboard(
+    project_id: int,
+    has_github_remote: bool,
+    repo_full_name: str | None = None,
+) -> InlineKeyboardMarkup:
+    """Detail view for a single saved project — run or delete."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if has_github_remote and repo_full_name:
+        rows.append([
+            InlineKeyboardButton("تعديل Issue", callback_data=encode_callback_payload("issues_for:", repo_full_name)),
+            InlineKeyboardButton("Issue جديد", callback_data=encode_callback_payload("newissue_for:", repo_full_name)),
+        ])
+        rows.append([
+            InlineKeyboardButton("تشغيل الـ Agent", callback_data=f"run_saved_proj:{project_id}"),
+        ])
+    else:
+        rows.append([
+            InlineKeyboardButton("تشغيل محلياً", callback_data=f"run_saved_proj:{project_id}"),
+        ])
+    rows.append([
+        InlineKeyboardButton("حذف المشروع", callback_data=f"{CB_SAVED_PROJ_DEL}{project_id}"),
+    ])
+    rows.append([
+        InlineKeyboardButton("رجوع للمشاريع", callback_data="menu:projects"),
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
+def saved_project_delete_confirm_keyboard(project_id: int) -> InlineKeyboardMarkup:
+    """Confirmation keyboard before deleting a saved project."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("نعم، احذف المشروع", callback_data=f"{CB_SAVED_PROJ_DEL_CONFIRM}{project_id}"),
+        ],
+        [
+            InlineKeyboardButton("⬅️ رجوع", callback_data=f"{CB_SAVED_PROJ}{project_id}"),
+        ],
+    ])
+
 
 
 # ---------------------------------------------------------------------------
@@ -445,8 +464,6 @@ def scheduled_jobs_keyboard(
                 InlineKeyboardButton("حذف", callback_data=f"{CB_SCHEDULE_DEL}{sj.id}")
             )
         rows.append(row)
-    if include_cancel:
-        rows.append([main_menu_button()])
     return InlineKeyboardMarkup(rows)
 
 
@@ -455,9 +472,7 @@ def schedule_confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("تأكيد الجدولة", callback_data="sched_confirm"),
-            InlineKeyboardButton("رجوع", callback_data="cancel"),
         ],
-        [main_menu_button()],
     ])
 
 
@@ -468,11 +483,8 @@ def schedule_confirm_keyboard() -> InlineKeyboardMarkup:
 def sysinfo_keyboard() -> InlineKeyboardMarkup:
     """Keyboard for /sysinfo resource monitoring view."""
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("تحديث الموارد", callback_data="sysinfo:refresh"),
-            InlineKeyboardButton("تنظيف الـ DB", callback_data="sysinfo:cleanup"),
-        ],
-        [main_menu_button()],
+        [InlineKeyboardButton("🔄 تحديث الموارد", callback_data="sysinfo:refresh")],
+        [InlineKeyboardButton("⬅️ رجوع", callback_data="sysinfo:back")],
     ])
 
 
@@ -500,7 +512,6 @@ def personal_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("إغلاق Personal Mode نهائياً", callback_data="personal:killswitch_ask"),
         ],
-        [main_menu_button()],
     ])
 
 
@@ -522,7 +533,6 @@ def personal_task_running_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("إيقاف المهمة الآن", callback_data="personal:task_stop"),
         ],
-        [main_menu_button()],
     ])
 
 
@@ -554,6 +564,4 @@ def accounts_keyboard(
         InlineKeyboardButton("حفظ الجلسة الحالية كـ Profile", callback_data="acc_save"),
         InlineKeyboardButton("تحديث", callback_data="menu:accounts"),
     ])
-    rows.append([main_menu_button()])
     return InlineKeyboardMarkup(rows)
-

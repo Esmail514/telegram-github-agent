@@ -13,6 +13,7 @@ from app.github.client import github_client
 from app.github.issues import issue_service
 from app.runner.project_scanner import project_scanner
 from app.telegram.auth import auth_required
+from app.telegram.callback_payloads import decode_callback_payload
 from app.telegram.keyboards import (
     CB_ISSUE,
     CB_ISSUE_PAGE,
@@ -57,10 +58,12 @@ async def show_project_select_for_issues(
         include_cancel=True,
         include_setdir=False,
     )
-    from telegram import InlineKeyboardButton
-    keyboard.inline_keyboard.insert(-1, [
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    rows = [list(row) for row in keyboard.inline_keyboard]
+    rows.insert(-1, [
         InlineKeyboardButton("Browse All GitHub Repos", callback_data="issues_browse_github")
     ])
+    keyboard = InlineKeyboardMarkup(rows)
 
     text = (
         f" *تصفح الـ Issues — اختر المشروع* (صفحة {page + 1})\n"
@@ -179,10 +182,10 @@ async def issues_for_repo_callback(
     """User selected a repo from issues menu — show issue list."""
     query = update.callback_query
     assert query
+    full_name = await decode_callback_payload(query, "issues_for:")
+    if full_name is None:
+        return
     await query.answer()
-
-    data = query.data or ""
-    full_name = data.replace("issues_for:", "")
 
     if context.user_data is not None:
         context.user_data["selected_repo"] = full_name

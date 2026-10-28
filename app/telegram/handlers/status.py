@@ -28,6 +28,8 @@ _ACTIVE_STATUSES = {
     JobStatus.IMPLEMENTING,
     JobStatus.TESTING,
     JobStatus.FIXING,
+    JobStatus.VERIFYING,
+    JobStatus.AWAITING_APPROVAL,
     JobStatus.COMMITTING,
     JobStatus.PUSHING,
     JobStatus.CREATING_PR,
@@ -48,7 +50,7 @@ def _build_status_text(job) -> tuple[str, bool]:
         error_line = f"\nالخطأ: `{job.error[:200]}`"
 
     text = (
-        "*حالة المهمة*\n"
+        "📊 *حالة المهمة*\n"
         f"المستودع: `{job.repo_full_name}` / Issue `#{job.issue_number}`\n"
         f"الحالة: `{job.status}`\n"
         f"المرحلة: `{job.current_phase or '—'}`\n"
@@ -150,7 +152,7 @@ async def stop_job_callback(
         )
         return
 
-    chat_id = query.message.chat_id if query.message else 0
+    chat_id = update.effective_chat.id if update.effective_chat else 0
 
     async def notify(msg: str) -> None:
         try:
@@ -197,7 +199,7 @@ def _build_sysinfo_text() -> str:
     from app.utils.sysmonitor import get_resource_snapshot
 
     snap = get_resource_snapshot()
-    lines = ["*موارد الجهاز*"]
+    lines = ["🖥️ *موارد الجهاز*"]
 
     if snap.get("psutil_available"):
         ram = snap.get("ram", {})
@@ -238,36 +240,12 @@ async def sysinfo_refresh_callback(
 
 
 @auth_required
-async def sysinfo_cleanup_callback(
+async def sysinfo_back_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """ Clean up old terminal-state jobs from the database."""
-    from app.telegram.keyboards import sysinfo_keyboard
-
+    """Leave the resource view and retain the persistent main keyboard."""
     query = update.callback_query
     assert query
-    await query.answer("جارٍ التنظيف...")
-
-    db = context.bot_data.get("db")
-    if db is None:
-        await query.answer(" قاعدة البيانات غير متاحة", show_alert=True)
-        return
-
-    from app.database.repository import JobRepository
-    repo = JobRepository(db)
-    deleted = await repo.cleanup_old_jobs(keep_last=50)
-
-    if deleted:
-        await query.answer(f" تم حذف {deleted} سجل قديم", show_alert=True)
-    else:
-        await query.answer(" لا يوجد سجلات قديمة للحذف", show_alert=True)
-
-    # Refresh the display
-    text = _build_sysinfo_text()
-    try:
-        await query.edit_message_text(
-            text, reply_markup=sysinfo_keyboard(), parse_mode="Markdown"
-        )
-    except Exception:
-        pass
+    await query.answer()
+    await query.edit_message_text("⬅️ تم الرجوع. اختر القسم التالي من الأزرار السفلية.")
 

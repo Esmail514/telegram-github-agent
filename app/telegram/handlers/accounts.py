@@ -16,7 +16,7 @@ from app.agents.antigravity_account_manager import AntigravityAccountManager
 from app.database.repository import JobRepository
 from app.runner.recovery import is_resumable, is_token_limit
 from app.telegram.auth import auth_required
-from app.telegram.keyboards import accounts_keyboard, main_menu_button
+from app.telegram.keyboards import accounts_keyboard
 from app.utils.security import sanitize_for_telegram
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,6 @@ async def accounts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not ok:
             await query.edit_message_text(
                 f" فشل التبديل إلى الحساب `{target_name}`. تأكد من سلامة ملف التعريف.",
-                reply_markup=InlineKeyboardMarkup([[main_menu_button()]]),
                 parse_mode="Markdown",
             )
             return
@@ -120,7 +119,6 @@ async def accounts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("استئناف العمل فوراً بالحساب الجديد", callback_data=f"acc_resume:{paused_job.job_id}")],
                 [InlineKeyboardButton("قائمة الحسابات", callback_data="menu:accounts")],
-                [main_menu_button()],
             ])
             await query.edit_message_text(
                 f" *تم التبديل بنجاح إلى الحساب:* `{target_name}`\n\n"
@@ -167,7 +165,6 @@ async def accounts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 "يقوم الـ Agent الآن بمراجعة التعديلات المتبقية ومتابعة العمل...",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("متابعة الحالة", callback_data="menu:status")],
-                    [main_menu_button()],
                 ]),
                 parse_mode="Markdown",
             )
@@ -175,7 +172,6 @@ async def accounts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             logger.error("Failed to resume job %s: %s", job_id, exc)
             await query.edit_message_text(
                 f" تعذر استئناف المهمة: {exc}",
-                reply_markup=InlineKeyboardMarkup([[main_menu_button()]]),
             )
 
     elif data == "acc_save":
@@ -195,7 +191,6 @@ async def accounts_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             help_text,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("العودة للحسابات", callback_data="menu:accounts")],
-                [main_menu_button()],
             ]),
             parse_mode="Markdown",
         )
@@ -224,11 +219,10 @@ async def saveaccount_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if ok:
         await update.message.reply_text(
             f" تم حفظ جلسة Antigravity الحالية بنجاح باسم:\n`{name}`\n\n"
-            "يمكنك الآن التبديل بين الحسابات في أي وقت عبر الأمر `/accounts` أو من القائمة الرئيسية.",
+            "يمكنك الآن التبديل بين الحسابات في أي وقت عبر الأمر `/accounts` أو لوحة الأزرار السفلية.",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("عرض الحسابات", callback_data="menu:accounts")],
-                [main_menu_button()],
             ]),
         )
     else:
@@ -264,7 +258,6 @@ async def deleteaccount_command(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("عرض الحسابات", callback_data="menu:accounts")],
-                [main_menu_button()],
             ]),
         )
     else:

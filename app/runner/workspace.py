@@ -8,6 +8,7 @@ import logging
 import shutil
 from pathlib import Path
 
+from app.agents.process_cleanup import terminate_process
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,9 @@ class WorkspaceManager:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout_sec
             )
+        except asyncio.CancelledError:
+            await terminate_process(proc)
+            raise
         except TimeoutError as err:
             try:
                 proc.kill()
@@ -82,8 +86,8 @@ class WorkspaceManager:
             raise TimeoutError(f"git clone timed out after {timeout_sec}s for {url}") from err
 
         if proc.returncode != 0:
-            err = stderr.decode(errors="replace")
-            raise RuntimeError(f"git clone failed (rc={proc.returncode}): {err[:500]}")
+            error_text = stderr.decode(errors="replace")
+            raise RuntimeError(f"git clone failed (rc={proc.returncode}): {error_text[:500]}")
         logger.info("Cloned into %s", dest)
 
     async def _git_pull(self, repo_path: Path) -> None:
@@ -98,6 +102,9 @@ class WorkspaceManager:
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout_sec
             )
+        except asyncio.CancelledError:
+            await terminate_process(proc)
+            raise
         except TimeoutError:
             try:
                 proc.kill()

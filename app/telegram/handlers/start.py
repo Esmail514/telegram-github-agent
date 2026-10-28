@@ -8,13 +8,24 @@ from telegram.ext import ContextTypes
 
 from app.runner.personal_guard import is_personal_mode_active
 from app.telegram.auth import auth_required
-from app.telegram.keyboards import github_menu_keyboard, main_menu_keyboard
+from app.telegram.handlers.polishissue import _clear_polish_data
+from app.telegram.keyboards import (
+    MAIN_MENU_GITHUB,
+    MAIN_MENU_PERSONAL,
+    MAIN_MENU_PROJECTS,
+    MAIN_MENU_SCHEDULES,
+    MAIN_MENU_STATUS,
+    MAIN_MENU_SYSTEM,
+    github_menu_keyboard,
+    main_menu_keyboard,
+)
 
-WELCOME = "*مساعد البرمجة*\nاختر الإجراء المطلوب."
+WELCOME = "👋 *مساعد البرمجة*\nاختر خدمة من الأزرار بالأسفل."
 
 
 @auth_required
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _clear_polish_data(context)
     assert update.message
     personal_active, _ = is_personal_mode_active()
     await update.message.reply_text(
@@ -25,8 +36,36 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 @auth_required
+async def main_menu_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Route a fixed bottom-keyboard choice to its existing screen."""
+    _clear_polish_data(context)
+    assert update.message
+    choice = update.message.text
+    if choice == MAIN_MENU_GITHUB:
+        await update.message.reply_text(
+            "🐙 *GitHub*\nاختر نوع الجدولة.", reply_markup=github_menu_keyboard(), parse_mode="Markdown"
+        )
+    elif choice == MAIN_MENU_PROJECTS:
+        from app.telegram.handlers.projects import show_projects
+        await show_projects(update, context)
+    elif choice == MAIN_MENU_SCHEDULES:
+        from app.telegram.handlers.schedule import schedule_list_command
+        await schedule_list_command(update, context)
+    elif choice == MAIN_MENU_STATUS:
+        from app.telegram.handlers.status import status_handler
+        await status_handler(update, context)
+    elif choice == MAIN_MENU_SYSTEM:
+        from app.telegram.handlers.status import sysinfo_handler
+        await sysinfo_handler(update, context)
+    elif choice == MAIN_MENU_PERSONAL:
+        from app.telegram.handlers.personal import personal_menu_handler
+        await personal_menu_handler(update, context)
+
+
+@auth_required
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle main menu inline button taps."""
+    _clear_polish_data(context)
     query = update.callback_query
     assert query
     await query.answer()
@@ -35,7 +74,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     if data == "menu:github":
         await query.edit_message_text(
-            "*GitHub*\nاختر الإجراء المطلوب.",
+            "🐙 *GitHub*\nاختر نوع الجدولة.",
             reply_markup=github_menu_keyboard(),
             parse_mode="Markdown",
         )
@@ -73,7 +112,4 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         from app.telegram.handlers.personal import personal_menu_handler
         await personal_menu_handler(update, context)
     elif data == "menu:start":
-        personal_active, _ = is_personal_mode_active()
-        await query.edit_message_text(
-            WELCOME, reply_markup=main_menu_keyboard(personal_mode=personal_active), parse_mode="Markdown"
-        )
+        await query.edit_message_text("⬅️ تم الرجوع. اختر من لوحة الأزرار السفلية.")

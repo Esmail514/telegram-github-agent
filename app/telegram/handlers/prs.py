@@ -14,6 +14,7 @@ from app.github.client import github_client
 from app.github.pull_requests import pr_service
 from app.runner.project_scanner import project_scanner
 from app.telegram.auth import auth_required
+from app.telegram.callback_payloads import decode_callback_payload
 from app.telegram.keyboards import (
     merge_options_keyboard,
     pr_detail_keyboard,
@@ -58,10 +59,12 @@ async def show_project_select_for_prs(
         include_cancel=True,
         include_setdir=False,
     )
-    from telegram import InlineKeyboardButton
-    keyboard.inline_keyboard.insert(-1, [
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    rows = [list(row) for row in keyboard.inline_keyboard]
+    rows.append([
         InlineKeyboardButton("Browse All GitHub Repos", callback_data="prs_browse_github")
     ])
+    keyboard = InlineKeyboardMarkup(rows)
 
     text = f" *Pull Requests — Select Project* (page {page + 1})\n\nChoose a project to view open PRs:"
     if update.callback_query:
@@ -170,9 +173,10 @@ async def prs_for_repo_callback(update: Update, context: ContextTypes.DEFAULT_TY
     """User picked a repo — show its open pull requests."""
     query = update.callback_query
     assert query
+    full_name = await decode_callback_payload(query, "prs_for:")
+    if full_name is None:
+        return
     await query.answer()
-
-    full_name = (query.data or "").replace("prs_for:", "")
     if context.user_data is not None:
         context.user_data["selected_pr_repo"] = full_name
 
@@ -280,10 +284,10 @@ async def merge_pr_start_callback(update: Update, context: ContextTypes.DEFAULT_
     """
     query = update.callback_query
     assert query
+    raw_data = await decode_callback_payload(query, "merge_pr:")
+    if raw_data is None:
+        return
     await query.answer()
-
-    # Data: merge_pr:<repo_full_name>:<pr_number>
-    raw_data = (query.data or "").replace("merge_pr:", "")
     parts = raw_data.rsplit(":", 1)
     if len(parts) != 2:
         await query.edit_message_text(" طلب دمج غير صالح.")
@@ -313,9 +317,10 @@ async def merge_pr_execute_callback(update: Update, context: ContextTypes.DEFAUL
     """
     query = update.callback_query
     assert query
+    raw_data = await decode_callback_payload(query, "do_merge:")
+    if raw_data is None:
+        return
     await query.answer()
-
-    raw_data = (query.data or "").replace("do_merge:", "")
     parts = raw_data.split(":", 2)
     if len(parts) != 3:
         await query.edit_message_text(" طلب تنفيذ دمج غير صالح.")

@@ -64,3 +64,9 @@ jobs:
 
       - name: Run pytest
         run: pytest -v --tb=short
+
+      - name: Check types
+        run: python -m mypy app
+
+      - name: Validate project skills
+        run: python .agents/skills/skill-maintainer/scripts/validate_skills.py
