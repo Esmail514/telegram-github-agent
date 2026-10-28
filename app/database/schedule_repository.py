@@ -17,6 +17,12 @@ def _now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _format_time(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("The scheduled time must be timezone-aware.")
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 class ScheduledJobStatus:
     PENDING = "PENDING"
     LAUNCHED = "LAUNCHED"
@@ -31,17 +37,21 @@ class ScheduledJob:
     agent: str
     scheduled_at: str       # ISO format UTC string
     chat_id: int
+    project_id: str | None
+    project_name: str | None
+    workspace_path: str | None
     status: str
     created_at: str
+    model: str | None = None
+    reasoning_effort: str | None = None
 
     @property
     def scheduled_dt(self) -> datetime:
         return datetime.fromisoformat(self.scheduled_at.replace("Z", "+00:00"))
 
     def display_time(self) -> str:
-        """Return local-friendly display string (UTC)."""
-        dt = self.scheduled_dt
-        return dt.strftime("%d/%m %H:%M UTC")
+        """Return a schedule time in the timezone configured on this device."""
+        return self.scheduled_dt.astimezone().strftime("%d/%m %H:%M")
 
 
 class ScheduleRepository:
@@ -55,22 +65,32 @@ class ScheduleRepository:
         agent: str,
         scheduled_at: datetime,
         chat_id: int,
+        project_id: str | None = None,
+        project_name: str | None = None,
+        workspace_path: str | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> ScheduledJob:
         """Insert a new scheduled job and return it."""
-        scheduled_at_str = scheduled_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+        scheduled_at_str = _format_time(scheduled_at)
         now = _now()
         cursor = await self._db.conn.execute(
             """
             INSERT INTO scheduled_jobs
-                (repo_full_name, issue_number, agent, scheduled_at, chat_id, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (repo_full_name, issue_number, agent, scheduled_at, chat_id,
+                 project_id, project_name, workspace_path, status, created_at, model, reasoning_effort)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (repo_full_name, issue_number, agent, scheduled_at_str,
-             chat_id, ScheduledJobStatus.PENDING, now),
+             chat_id, project_id, project_name, workspace_path, ScheduledJobStatus.PENDING, now,
+             model, reasoning_effort),
         )
         await self._db.conn.commit()
         row_id = cursor.lastrowid
-        return await self.get(row_id)  # type: ignore[return-value]
+        assert row_id is not None
+        created = await self.get(row_id)
+        assert created is not None
+        return created
 
     async def get(self, job_id: int) -> ScheduledJob | None:
         async with self._db.conn.execute(
@@ -81,7 +101,7 @@ class ScheduleRepository:
 
     async def list_pending(self, before: datetime | None = None) -> list[ScheduledJob]:
         """Return PENDING jobs whose scheduled_at <= now (or custom threshold)."""
-        cutoff = (before or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = _format_time(before or datetime.now(UTC))
         async with self._db.conn.execute(
             """
             SELECT * FROM scheduled_jobs
@@ -150,27 +170,38 @@ class ScheduleRepository:
                 rows = await cursor.fetchall()
         return [_row_to_job(r) for r in rows]
 
-    async def mark_launched(self, job_id: int) -> None:
+    async def mark_launched(self, job_id: int) -> bool:
+        cursor = await self._db.conn.execute(
+            "UPDATE scheduled_jobs SET status = ? WHERE id = ? AND status = ?",
+            (ScheduledJobStatus.LAUNCHED, job_id, ScheduledJobStatus.PENDING),
+        )
+        await self._db.conn.commit()
+        return cursor.rowcount == 1
+
+    async def release_launch(self, job_id: int) -> None:
         await self._db.conn.execute(
-            "UPDATE scheduled_jobs SET status = ? WHERE id = ?",
-            (ScheduledJobStatus.LAUNCHED, job_id),
+            "UPDATE scheduled_jobs SET status = ? WHERE id = ? AND status = ?",
+            (ScheduledJobStatus.PENDING, job_id, ScheduledJobStatus.LAUNCHED),
         )
         await self._db.conn.commit()
 
     async def cancel(self, job_id: int) -> bool:
         """Cancel a PENDING scheduled job. Returns True if it was actually pending."""
-        async with self._db.conn.execute(
-            "SELECT status FROM scheduled_jobs WHERE id = ?", (job_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-        if not row or row["status"] != ScheduledJobStatus.PENDING:
-            return False
-        await self._db.conn.execute(
-            "UPDATE scheduled_jobs SET status = ? WHERE id = ?",
-            (ScheduledJobStatus.CANCELLED, job_id),
+        cursor = await self._db.conn.execute(
+            "UPDATE scheduled_jobs SET status = ? WHERE id = ? AND status = ?",
+            (ScheduledJobStatus.CANCELLED, job_id, ScheduledJobStatus.PENDING),
         )
         await self._db.conn.commit()
-        return True
+        return cursor.rowcount == 1
+
+    async def update_time(self, job_id: int, scheduled_at: datetime) -> bool:
+        """Change the time of a pending job without changing its identity."""
+        cursor = await self._db.conn.execute(
+            "UPDATE scheduled_jobs SET scheduled_at = ? WHERE id = ? AND status = ?",
+            (_format_time(scheduled_at), job_id, ScheduledJobStatus.PENDING),
+        )
+        await self._db.conn.commit()
+        return cursor.rowcount == 1
 
 
 def _row_to_job(row: Any) -> ScheduledJob:
@@ -182,6 +213,11 @@ def _row_to_job(row: Any) -> ScheduledJob:
         agent=d["agent"],
         scheduled_at=d["scheduled_at"],
         chat_id=d["chat_id"],
+        project_id=d.get("project_id"),
+        project_name=d.get("project_name"),
+        workspace_path=d.get("workspace_path"),
         status=d["status"],
         created_at=d["created_at"],
+        model=d.get("model"),
+        reasoning_effort=d.get("reasoning_effort"),
     )

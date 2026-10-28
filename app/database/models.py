@@ -109,6 +109,50 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 """
 
+SELECTED_PROJECTS_TABLE = """
+CREATE TABLE IF NOT EXISTS selected_projects (
+    user_id         INTEGER PRIMARY KEY,
+    name            TEXT NOT NULL,
+    path            TEXT NOT NULL,
+    repo_full_name  TEXT,
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+"""
+
+SAVED_PROJECTS_TABLE = """
+CREATE TABLE IF NOT EXISTS saved_projects (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL,
+    name            TEXT NOT NULL,
+    path            TEXT NOT NULL,
+    repo_full_name  TEXT,
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE(user_id, path)
+);
+"""
+
+CREATE_SAVED_PROJECTS_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_saved_projects_user_id
+    ON saved_projects (user_id);
+"""
+
+# Controller-owned approval of editable CSV locations; prompt text stays in CSV.
+TRUSTED_LOCAL_SCHEDULE_STORES_TABLE = """
+CREATE TABLE IF NOT EXISTS trusted_local_schedule_stores (
+    path         TEXT PRIMARY KEY,
+    owner_id     INTEGER NOT NULL,
+    approved_at  TEXT NOT NULL
+);
+"""
+
+PROJECT_ROOTS_TABLE = """
+CREATE TABLE IF NOT EXISTS project_roots (
+    user_id         INTEGER PRIMARY KEY,
+    path            TEXT NOT NULL,
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+"""
+
 CREATE_JOBS_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_jobs_status
     ON jobs (status, created_at);
@@ -139,11 +183,19 @@ CREATE INDEX IF NOT EXISTS idx_approvals_job_id
 MIGRATIONS = [
     ("jobs", "workspace_path", "ALTER TABLE jobs ADD COLUMN workspace_path TEXT"),
     ("jobs", "local_workspace", "ALTER TABLE jobs ADD COLUMN local_workspace INTEGER NOT NULL DEFAULT 0"),
+    ("scheduled_jobs", "project_name", "ALTER TABLE scheduled_jobs ADD COLUMN project_name TEXT"),
+    ("scheduled_jobs", "workspace_path", "ALTER TABLE scheduled_jobs ADD COLUMN workspace_path TEXT"),
+    ("scheduled_jobs", "project_id", "ALTER TABLE scheduled_jobs ADD COLUMN project_id TEXT"),
+    ("scheduled_jobs", "model", "ALTER TABLE scheduled_jobs ADD COLUMN model TEXT"),
+    ("scheduled_jobs", "reasoning_effort", "ALTER TABLE scheduled_jobs ADD COLUMN reasoning_effort TEXT"),
 ]
 
 ALL_DDL = [
     JOBS_TABLE,
     SESSIONS_TABLE,
+    SELECTED_PROJECTS_TABLE,
+    SAVED_PROJECTS_TABLE,
+    PROJECT_ROOTS_TABLE,
     CREATE_JOBS_INDEX,
     SCHEDULED_JOBS_TABLE,
     CREATE_SCHEDULED_INDEX,
@@ -156,4 +208,6 @@ ALL_DDL = [
     CREATE_VERIFICATION_INDEX,
     CREATE_ATTEMPTS_INDEX,
     CREATE_APPROVALS_INDEX,
+    CREATE_SAVED_PROJECTS_INDEX,
+    TRUSTED_LOCAL_SCHEDULE_STORES_TABLE,
 ]

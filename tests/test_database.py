@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from app.database.repository import Database, JobRepository, JobStatus
+from app.database.repository import (
+    Database,
+    JobRepository,
+    JobStatus,
+    ProjectRootRepository,
+    SelectedProjectRepository,
+)
+from app.database.schedule_repository import ScheduledJobStatus, ScheduleRepository
 
 
 @pytest.fixture
@@ -126,3 +133,84 @@ async def test_list_recent_jobs(temp_db: Database):
 
     recent = await repo.list_recent_jobs(limit=3)
     assert len(recent) == 3
+
+
+@pytest.mark.asyncio
+async def test_selected_project_is_persisted_per_user(temp_db: Database):
+    repo = SelectedProjectRepository(temp_db)
+
+    await repo.save(123, "telegram-bot", "D:/Work/telegram-bot", "owner/telegram-bot")
+
+    selected = await repo.get(123)
+    assert selected is not None
+    assert selected.name == "telegram-bot"
+    assert selected.path == "D:/Work/telegram-bot"
+    assert selected.repo_full_name == "owner/telegram-bot"
+
+
+@pytest.mark.asyncio
+async def test_selected_project_can_be_changed(temp_db: Database):
+    repo = SelectedProjectRepository(temp_db)
+    await repo.save(123, "first", "D:/Work/first", None)
+    await repo.save(123, "second", "D:/Work/second", "owner/second")
+
+    selected = await repo.get(123)
+    assert selected is not None
+    assert selected.name == "second"
+
+
+@pytest.mark.asyncio
+async def test_selected_project_paths_can_be_cleared_without_deleting_projects(temp_db: Database):
+    repo = SelectedProjectRepository(temp_db)
+    await repo.save(123, "first", "D:/Work/first", "owner/first")
+    await repo.save(456, "second", "E:/Work/second", "owner/second")
+
+    assert await repo.clear_paths() == 2
+
+    first = await repo.get(123)
+    second = await repo.get(456)
+    assert first is not None and second is not None
+    assert (first.name, first.path, first.repo_full_name) == ("first", "", "owner/first")
+    assert (second.name, second.path, second.repo_full_name) == ("second", "", "owner/second")
+
+
+@pytest.mark.asyncio
+async def test_confirmed_projects_root_is_persisted_separately(temp_db: Database):
+    roots = ProjectRootRepository(temp_db)
+
+    await roots.save(123, "D:/Projects")
+    await roots.save(123, "E:/Development")
+
+    root = await roots.get(123)
+    assert root is not None
+    assert root.path == "E:/Development"
+
+
+@pytest.mark.asyncio
+async def test_pending_scheduled_issue_can_be_rescheduled_or_started_now(temp_db: Database):
+    from datetime import UTC, datetime, timedelta
+
+    schedules = ScheduleRepository(temp_db)
+    created = await schedules.create(
+        repo_full_name="owner/repo",
+        issue_number=7,
+        agent="codex",
+        scheduled_at=datetime.now(UTC) + timedelta(hours=1),
+        chat_id=123,
+    )
+
+    assert await schedules.update_time(created.id, datetime.now(UTC))
+    updated = await schedules.get(created.id)
+    assert updated is not None and updated.status == ScheduledJobStatus.PENDING
+@pytest.mark.asyncio
+async def test_scheduled_issue_claim_is_atomic_and_normalizes_timezone(temp_db: Database):
+    from datetime import UTC, datetime, timedelta, timezone
+
+    repo = ScheduleRepository(temp_db)
+    local_time = datetime(2026, 10, 7, 15, 0, tzinfo=timezone(timedelta(hours=3)))
+    job = await repo.create("owner/repo", 1, "codex", local_time, 123)
+
+    assert job.scheduled_dt == datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
+    assert await repo.mark_launched(job.id) is True
+    assert await repo.mark_launched(job.id) is False
+    assert await repo.cancel(job.id) is False

@@ -3,23 +3,20 @@ Tests for AgentManager.
 """
 import pytest
 
+from app.agents.antigravity import AntigravityAgent
 from app.agents.manager import AgentManager
-from app.agents.opencode import OpenCodeAgent
 
 
 def test_list_available():
     manager = AgentManager()
     available = manager.list_available()
-    assert "opencode" in available
-    assert "claude" in available
-    assert "codex" in available
-    assert "gemini" in available
+    assert available == ["antigravity", "codex"]
 
 
 def test_get_agent_creates_instance():
     manager = AgentManager()
-    agent = manager.get_agent("opencode")
-    assert isinstance(agent, OpenCodeAgent)
+    agent = manager.get_agent("antigravity")
+    assert isinstance(agent, AntigravityAgent)
     assert manager.get_active() is agent
 
     manager.clear_active()

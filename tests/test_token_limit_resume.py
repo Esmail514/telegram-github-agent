@@ -4,7 +4,7 @@ Tests for token limit detection, pause, and resumption across Antigravity and Jo
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -88,10 +88,9 @@ async def test_antigravity_continuation_prompt(tmp_path: Path) -> None:
     mock_process = AsyncMock()
     mock_process.returncode = 0
     mock_process.stdout = AsyncMock()
-    mock_process.stdout.at_eof = MagicMock(side_effect=[False, True])
-    mock_process.stdout.readline = AsyncMock(return_value=b"Completed successfully\n")
+    mock_process.stdout.read = AsyncMock(side_effect=[b"Completed successfully\n", b""])
     mock_process.stderr = AsyncMock()
-    mock_process.stderr.at_eof = MagicMock(return_value=True)
+    mock_process.stderr.read = AsyncMock(return_value=b"")
 
     with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
         result = await agent.run(context, tmp_path, AsyncMock())

@@ -29,9 +29,11 @@ from app.runner.personal_task import PersonalTaskManager, PersonalTaskResult
 
 
 @pytest.fixture(autouse=True)
-def cleanup_lockfile():
+def cleanup_lockfile(tmp_path, monkeypatch):
     """Ensure lockfile is cleaned up before and after each test."""
-    lockfile = get_lockfile_path()
+    lockfile = tmp_path / ".personal_mode_disabled"
+    monkeypatch.setattr("app.runner.personal_guard.get_lockfile_path", lambda: lockfile)
+    monkeypatch.setattr("tests.test_personal_mode.get_lockfile_path", lambda: lockfile)
     if lockfile.exists():
         lockfile.unlink()
     orig_mode = settings.PERSONAL_MODE

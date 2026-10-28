@@ -10,12 +10,16 @@ from app.config import settings as settings_module
 
 
 @pytest.fixture(autouse=True)
-def default_env(monkeypatch):
+def default_env(monkeypatch, tmp_path):
     """Set mock environment variables so settings can be instantiated during tests."""
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:ABCdefGHIjklMNOpqrsTUVwxyz123456789")
     monkeypatch.setenv("TELEGRAM_ALLOWED_USER_ID", "123456789")
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_mocktokenforautomatedtestingsuite00000")
-    monkeypatch.setenv("DEFAULT_AGENT", "opencode")
+    monkeypatch.setenv("DEFAULT_AGENT", "antigravity")
+    monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path / "workspaces"))
+    monkeypatch.setenv("LOCAL_PROMPT_SCHEDULES_PATH", str(tmp_path / "schedules.csv"))
+    monkeypatch.setenv("PERSONAL_WORKSPACE_DIR", str(tmp_path / "personal"))
+    monkeypatch.setenv("PROJECTS_DIR", "")
     settings_module._settings_instance = None
     yield
     settings_module._settings_instance = None

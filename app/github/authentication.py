@@ -36,8 +36,7 @@ def get_github_client() -> Github:
             private_key=private_key,
         )
         integration = GithubIntegration(auth=app_auth)
-        installation = integration.get_installation(settings.GITHUB_INSTALLATION_ID)
-        client = installation.get_github_for_installation()
+        client = integration.get_github_for_installation(settings.GITHUB_INSTALLATION_ID)
         logger.info(
             "GitHub authenticated as App (id=%s, installation=%s)",
             settings.GITHUB_APP_ID,

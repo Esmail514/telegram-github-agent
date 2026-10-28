@@ -1,12 +1,13 @@
 """
 /newissue handler — multi-step ConversationHandler to create a GitHub issue.
 
-Flow: Select Repo → Title → Body → Labels (optional) → Confirm → Create
+Flow: Select Repo  Title  Body  Labels (optional)  Confirm  Create
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from telegram import Update
 from telegram.ext import (
@@ -17,13 +18,21 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.helpers import escape_markdown
 
 from app.github.assets import asset_uploader
 from app.github.client import github_client
 from app.github.issues import issue_service
 from app.runner.project_scanner import project_scanner
 from app.telegram.auth import auth_required
+from app.telegram.callback_payloads import decode_callback_payload
 from app.telegram.keyboards import (
+    MAIN_MENU_GITHUB,
+    MAIN_MENU_PERSONAL,
+    MAIN_MENU_PROJECTS,
+    MAIN_MENU_SCHEDULES,
+    MAIN_MENU_STATUS,
+    MAIN_MENU_SYSTEM,
     cancel_keyboard,
     polish_newissue_keyboard,
     projects_keyboard,
@@ -40,6 +49,13 @@ logger = logging.getLogger(__name__)
     NI_ENTER_LABELS,
     NI_CONFIRM,
 ) = range(5)
+_MENU_TEXT = filters.Regex(
+    r"^(" + "|".join(re.escape(label) for label in (
+        MAIN_MENU_GITHUB, MAIN_MENU_PERSONAL, MAIN_MENU_PROJECTS,
+        MAIN_MENU_SCHEDULES, MAIN_MENU_STATUS, MAIN_MENU_SYSTEM,
+    )) + r")$"
+)
+_INPUT_TEXT = filters.TEXT & ~_MENU_TEXT
 
 
 @auth_required
@@ -48,7 +64,7 @@ async def newissue_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if projects:
         return await start_newissue_project_flow(update, context, page=0)
     assert update.message
-    await update.message.reply_text("⏳ جاري جلب المستودعات من GitHub...")
+    await update.message.reply_text(" جاري جلب المستودعات من GitHub...")
     return await _show_repo_select_for_newissue(update, context)
 
 
@@ -60,6 +76,14 @@ async def start_newissue_flow(
     if projects:
         return await start_newissue_project_flow(update, context, page=page)
     return await _show_repo_select_for_newissue(update, context, page=page)
+
+
+@auth_required
+async def start_newissue_github_flow(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+    """GitHub menu entry: always choose from GitHub repositories first."""
+    return await _show_repo_select_for_newissue(update, context, page=0)
 
 
 async def start_newissue_project_flow(
@@ -81,12 +105,14 @@ async def start_newissue_project_flow(
         include_cancel=True,
         include_setdir=False,
     )
-    from telegram import InlineKeyboardButton
-    keyboard.inline_keyboard.insert(-1, [
-        InlineKeyboardButton("🌐 تصفح كافة مستودعات GitHub", callback_data="ni_browse_github")
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    rows = [list(row) for row in keyboard.inline_keyboard]
+    rows.append([
+        InlineKeyboardButton("تصفح كافة مستودعات GitHub", callback_data="ni_browse_github")
     ])
+    keyboard = InlineKeyboardMarkup(rows)
 
-    text = f"➕ *إنشاء Issue جديد — اختر المشروع* (صفحة {page + 1}):\n\nاختر المشروع الذي ترغب في فتح Issue له:"
+    text = f" *إنشاء Issue جديد — اختر المشروع* (صفحة {page + 1}):\n\nاختر المشروع الذي ترغب في فتح Issue له:"
 
     if update.callback_query:
         await update.callback_query.answer()
@@ -128,7 +154,7 @@ async def ni_proj_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if not project or not project.repo_full_name:
         await query.edit_message_text(
-            f"⚠️ المشروع `{project.name if project else raw_val}` غير مرتبط بمستودع GitHub.\n"
+            f" المشروع `{project.name if project else raw_val}` غير مرتبط بمستودع GitHub.\n"
             f"لا يمكن إنشاء Issue لهذا المجلد.",
             parse_mode="Markdown",
         )
@@ -138,29 +164,31 @@ async def ni_proj_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         context.user_data["ni_repo"] = project.repo_full_name
 
     await query.edit_message_text(
-        f"✏️ *المشروع:* `{project.name}`\n"
-        f"📦 *المستودع:* `{project.repo_full_name}`\n\n"
-        f"يرجى إدخال *عنوان الـ Issue*:\n_(أو أرسل /cancel للإلغاء)_",
+        f" *المشروع:* `{project.name}`\n"
+        f" *المستودع:* `{project.repo_full_name}`\n\n"
+        f"يرجى إدخال *عنوان الـ Issue*:\n_(أو أرسل /cancel للرجوع)_",
         reply_markup=cancel_keyboard(),
         parse_mode="Markdown",
     )
     return NI_ENTER_TITLE
 
 
+@auth_required
 async def start_newissue_for_repo(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    """Direct entry when user tapped [➕ New Issue] on project detail view."""
+    """Direct entry when user tapped [ New Issue] on project detail view."""
     query = update.callback_query
     assert query
+    full_name = await decode_callback_payload(query, "newissue_for:")
+    if full_name is None:
+        return ConversationHandler.END
     await query.answer()
-
-    full_name = (query.data or "").replace("newissue_for:", "")
     if context.user_data is not None:
         context.user_data["ni_repo"] = full_name
 
     await query.edit_message_text(
-        f"✏️ *المستودع:* `{full_name}`\n\nيرجى إدخال *عنوان الـ Issue*:\n_(أو أرسل /cancel للإلغاء)_",
+        f" *المستودع:* `{full_name}`\n\nيرجى إدخال *عنوان الـ Issue*:\n_(أو أرسل /cancel للرجوع)_",
         reply_markup=cancel_keyboard(),
         parse_mode="Markdown",
     )
@@ -176,7 +204,7 @@ async def _show_repo_select_for_newissue(
         )
     except Exception as exc:
         logger.error("Failed to list repos for newissue: %s", exc)
-        msg = "❌ تعذر جلب المستودعات من GitHub. يرجى التحقق من بيانات الربط."
+        msg = " تعذر جلب المستودعات من GitHub. يرجى التحقق من بيانات الربط."
         if update.callback_query:
             await update.callback_query.edit_message_text(msg)
         elif update.message:
@@ -190,7 +218,7 @@ async def _show_repo_select_for_newissue(
         page_prefix="newissue_repo_page:",
         include_cancel=True,
     )
-    text = f"➕ *إنشاء Issue جديد*\n\nاختر المستودع المطلوب (صفحة {page + 1}):"
+    text = f" *إنشاء Issue جديد*\n\nاختر المستودع المطلوب (صفحة {page + 1}):"
 
     if update.callback_query:
         await update.callback_query.answer()
@@ -217,17 +245,18 @@ async def ni_repo_page_callback(
 async def ni_repo_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     assert query
+    full_name = await decode_callback_payload(query, "newissue_repo:")
+    if full_name is None:
+        return NI_SELECT_REPO
     await query.answer()
-
-    full_name = (query.data or "").replace("newissue_repo:", "")
     if context.user_data is not None:
         context.user_data["ni_repo"] = full_name
 
     await query.edit_message_text(
-        f"✏️ *إنشاء Issue جديد*\n"
+        f" *إنشاء Issue جديد*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 *المستودع:* `{full_name}`\n\n"
-        "📝 يرجى إدخال *عنوان الـ Issue* (Title):",
+        f" *المستودع:* `{full_name}`\n\n"
+        " يرجى إدخال *عنوان الـ Issue* (Title):",
         reply_markup=cancel_keyboard(),
         parse_mode="Markdown",
     )
@@ -240,7 +269,7 @@ async def ni_enter_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if len(title) < 3:
         await update.message.reply_text(
-            "⚠️ يجب أن يتكون العنوان من 3 أحرف على الأقل. يرجى المحاولة مرة أخرى:",
+            " يجب أن يتكون العنوان من 3 أحرف على الأقل. يرجى المحاولة مرة أخرى:",
             reply_markup=cancel_keyboard(),
         )
         return NI_ENTER_TITLE
@@ -249,10 +278,10 @@ async def ni_enter_title(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data["ni_title"] = title
 
     await update.message.reply_text(
-        f"📝 *العنوان:* {title}\n"
+        f" *العنوان:* {title}\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "الآن يرجى إدخال *وصف الـ Issue* (Description):\n"
-        "📷 _يمكنك إرسال صورة/لقطة شاشة مع شرح، أو إرسال نص عادي، أو إرسال /skip لتركه فارغاً._",
+        " _يمكنك إرسال صورة/لقطة شاشة مع شرح، أو إرسال نص عادي، أو إرسال /skip لتركه فارغاً._",
         parse_mode="Markdown",
         reply_markup=cancel_keyboard(),
     )
@@ -267,7 +296,7 @@ async def ni_enter_body(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     if update.message.photo:
         photo = update.message.photo[-1]
         caption = (update.message.caption or "").strip()
-        status_msg = await update.message.reply_text("⏳ جاري رفع الصورة إلى GitHub...")
+        status_msg = await update.message.reply_text(" جاري رفع الصورة إلى GitHub...")
         try:
             tg_file = await context.bot.get_file(photo.file_id)
             photo_bytes = await tg_file.download_as_bytearray()
@@ -289,7 +318,7 @@ async def ni_enter_body(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         except Exception as exc:
             logger.error("Failed to upload image: %s", exc)
             await status_msg.edit_text(
-                f"⚠️ فشل رفع الصورة: {str(exc)[:150]}\nيرجى كتابة وصف الـ Issue كنص:"
+                f" فشل رفع الصورة: {str(exc)[:150]}\nيرجى كتابة وصف الـ Issue كنص:"
             )
             return NI_ENTER_BODY
 
@@ -301,7 +330,7 @@ async def ni_enter_body(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     ):
         doc = update.message.document
         caption = (update.message.caption or "").strip()
-        status_msg = await update.message.reply_text("⏳ جاري رفع الصورة إلى GitHub...")
+        status_msg = await update.message.reply_text(" جاري رفع الصورة إلى GitHub...")
         try:
             tg_file = await context.bot.get_file(doc.file_id)
             doc_bytes = await tg_file.download_as_bytearray()
@@ -325,7 +354,7 @@ async def ni_enter_body(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         except Exception as exc:
             logger.error("Failed to upload document image: %s", exc)
             await status_msg.edit_text(
-                f"⚠️ فشل رفع الصورة: {str(exc)[:150]}\nيرجى كتابة وصف الـ Issue كنص:"
+                f" فشل رفع الصورة: {str(exc)[:150]}\nيرجى كتابة وصف الـ Issue كنص:"
             )
             return NI_ENTER_BODY
 
@@ -338,7 +367,7 @@ async def ni_enter_body(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         context.user_data["ni_body"] = body
 
     await update.message.reply_text(
-        "🏷 *التصنيفات (Labels)*\n"
+        " *التصنيفات (Labels)*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "أدخل التصنيفات مفصولة بفواصل (مثال: `bug, enhancement`)،\n"
         "أو أرسل `/skip` لعدم إضافة تصنيفات:",
@@ -371,21 +400,27 @@ async def _show_confirm(
     body = ud.get("ni_body", "")
     labels = ud.get("ni_labels", [])
 
-    labels_str = ", ".join(f"`{lb}`" for lb in labels) if labels else "none"
+    labels_str = ", ".join(escape_markdown(str(lb)) for lb in labels) if labels else "none"
     body_preview = (body[:200] + "...") if len(body) > 200 else body
 
     confirm_text = (
-        f"📋 *مراجعة تفاصيل الـ Issue قبل الإنشاء*\n"
+        f" *مراجعة تفاصيل الـ Issue قبل الإنشاء*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 *المستودع:* `{repo}`\n"
-        f"📌 *العنوان:* {title}\n"
-        f"🏷 *التصنيفات:* {labels_str}\n\n"
-        f"📝 *الوصف:*\n{body_preview or '_(فارغ)_'}\n"
+        f" *المستودع:* `{repo}`\n"
+        f" *العنوان:* {escape_markdown(title)}\n"
+        f" *التصنيفات:* {labels_str}\n\n"
+        f" *الوصف:*\n{escape_markdown(body_preview) if body_preview else '_(فارغ)_'}\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "تأكد من صحة البيانات ثم اضغط تأكيد:"
     )
 
-    if update.message:
+    if update.callback_query:
+        await update.callback_query.edit_message_text(
+            confirm_text,
+            reply_markup=polish_newissue_keyboard(),
+            parse_mode="Markdown",
+        )
+    elif update.message:
         await update.message.reply_text(
             confirm_text,
             reply_markup=polish_newissue_keyboard(),
@@ -400,7 +435,7 @@ async def ni_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.answer()
 
     if (query.data or "") == "cancel":
-        await query.edit_message_text("❌ تم إلغاء إنشاء الـ Issue.")
+        await query.edit_message_text(" تم رجوع إنشاء الـ Issue.")
         return ConversationHandler.END
 
     ud = context.user_data or {}
@@ -409,7 +444,7 @@ async def ni_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     body = ud.get("ni_body", "")
     labels = ud.get("ni_labels", [])
 
-    await query.edit_message_text("⏳ جاري إنشاء الـ Issue على GitHub...")
+    await query.edit_message_text(" جاري إنشاء الـ Issue على GitHub...")
 
     try:
         issue = await asyncio.get_event_loop().run_in_executor(
@@ -418,59 +453,63 @@ async def ni_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
     except Exception as exc:
         logger.error("Failed to create issue: %s", exc)
-        await query.edit_message_text(f"❌ تعذر إنشاء الـ Issue: {str(exc)[:200]}")
+        await query.edit_message_text(f" تعذر إنشاء الـ Issue: {str(exc)[:200]}")
         return ConversationHandler.END
 
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    success_kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🔗 فتح في GitHub", url=issue.html_url),
-            InlineKeyboardButton("🚀 تشغيل الـ Agent", callback_data=f"run_issue:{issue.number}"),
-        ],
-        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="menu:start")],
-    ])
     await query.edit_message_text(
-        f"✅ *تم إنشاء الـ Issue بنجاح على GitHub!*\n"
+        f" *تم إنشاء الـ Issue بنجاح على GitHub!*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 *المستودع:* `{repo}`\n"
-        f"📌 *الـ Issue:* `#{issue.number}`\n"
-        f"📝 *العنوان:* {issue.title}\n"
+        f" *المستودع:* `{repo}`\n"
+        f" *الـ Issue:* `#{issue.number}`\n"
+        f" *العنوان:* {issue.title}\n"
         "━━━━━━━━━━━━━━━━━━━━",
-        reply_markup=success_kb,
         parse_mode="Markdown",
     )
     return ConversationHandler.END
 
 
 async def ni_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if context.user_data:
-        for k in list(context.user_data.keys()):
-            if k.startswith("ni_"):
-                context.user_data.pop(k, None)
+    _clear_newissue_context(context)
     if update.callback_query:
         await update.callback_query.answer()
-        from app.telegram.handlers.start import WELCOME
-        from app.telegram.keyboards import main_menu_keyboard
-        await update.callback_query.edit_message_text(
-            WELCOME, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
-        )
+        await update.callback_query.edit_message_text("⬅️ تم الرجوع.")
     return ConversationHandler.END
 
 
 async def ni_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    _clear_newissue_context(context)
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text("❌ تم إلغاء إنشاء الـ Issue.")
+        await update.callback_query.edit_message_text(" تم رجوع إنشاء الـ Issue.")
     elif update.message:
-        await update.message.reply_text("❌ تم إلغاء إنشاء الـ Issue.")
+        await update.message.reply_text(" تم رجوع إنشاء الـ Issue.")
     return ConversationHandler.END
+
+
+@auth_required
+async def ni_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from app.telegram.handlers.start import main_menu_message_handler
+
+    _clear_newissue_context(context)
+    await main_menu_message_handler(update, context)
+    return ConversationHandler.END
+
+
+def _clear_newissue_context(context: ContextTypes.DEFAULT_TYPE) -> None:
+    from app.telegram.handlers.polishissue import _clear_polish_data
+
+    if context.user_data is not None:
+        for key in list(context.user_data):
+            if key.startswith("ni_"):
+                context.user_data.pop(key, None)
+    _clear_polish_data(context)
 
 
 def build_newissue_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("newissue", newissue_command),
-            CallbackQueryHandler(start_newissue_flow, pattern="^menu:newissue$"),
+            CallbackQueryHandler(start_newissue_github_flow, pattern="^menu:newissue$"),
             CallbackQueryHandler(start_newissue_for_repo, pattern="^newissue_for:"),
         ],
         states={
@@ -486,15 +525,15 @@ def build_newissue_handler() -> ConversationHandler:
                 CallbackQueryHandler(ni_cancel, pattern="^cancel$"),
             ],
             NI_ENTER_TITLE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ni_enter_title),
+                MessageHandler(_INPUT_TEXT & ~filters.COMMAND, ni_enter_title),
                 CallbackQueryHandler(ni_cancel, pattern="^cancel$"),
             ],
             NI_ENTER_BODY: [
-                MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.IMAGE, ni_enter_body),
+                MessageHandler(_INPUT_TEXT | filters.PHOTO | filters.Document.IMAGE, ni_enter_body),
                 CallbackQueryHandler(ni_cancel, pattern="^cancel$"),
             ],
             NI_ENTER_LABELS: [
-                MessageHandler(filters.TEXT, ni_enter_labels),
+                MessageHandler(_INPUT_TEXT, ni_enter_labels),
                 CallbackQueryHandler(ni_cancel, pattern="^cancel$"),
             ],
             NI_CONFIRM: [
@@ -502,6 +541,7 @@ def build_newissue_handler() -> ConversationHandler:
             ],
         },
         fallbacks=[
+            MessageHandler(_MENU_TEXT, ni_main_menu),
             CommandHandler("cancel", ni_cancel),
             CallbackQueryHandler(ni_cancel, pattern="^cancel$"),
             CallbackQueryHandler(ni_to_menu, pattern="^menu:start$"),

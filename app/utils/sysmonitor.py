@@ -47,7 +47,9 @@ def _dir_size_mb(path: Path) -> float:
     return _fmt_mb(total)
 
 
-def get_resource_snapshot(workspace_dir: Path | None = None) -> dict[str, Any]:
+def get_resource_snapshot(
+    workspace_dir: Path | None = None, *, include_storage_details: bool = False
+) -> dict[str, Any]:
     """
     Return a dict with current system resource usage.
 
@@ -83,7 +85,7 @@ def get_resource_snapshot(workspace_dir: Path | None = None) -> dict[str, Any]:
     }
 
     # ── CPU ──────────────────────────────────────────────────────────────
-    cpu_pct = psutil.cpu_percent(interval=0.1)
+    cpu_pct = psutil.cpu_percent(interval=None)
     cpu = {
         "percent": round(cpu_pct, 1),
         "count": psutil.cpu_count(logical=True),
@@ -127,7 +129,7 @@ def get_resource_snapshot(workspace_dir: Path | None = None) -> dict[str, Any]:
     try:
         from app.config.settings import settings
         ws = workspace_dir or settings.WORKSPACE_DIR
-        if ws.exists():
+        if include_storage_details and ws.exists():
             workspace_size_mb = _dir_size_mb(ws)
     except Exception:
         pass

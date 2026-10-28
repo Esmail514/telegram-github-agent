@@ -8,8 +8,13 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
     repo_full_name  TEXT NOT NULL,
     issue_number    INTEGER NOT NULL,
     agent           TEXT NOT NULL DEFAULT 'antigravity',
+    model           TEXT,
+    reasoning_effort TEXT,
     scheduled_at    TEXT NOT NULL,
     chat_id         INTEGER NOT NULL,
+    project_id      TEXT,
+    project_name    TEXT,
+    workspace_path  TEXT,
     status          TEXT NOT NULL DEFAULT 'PENDING',
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );

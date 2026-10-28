@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.agents.base import AgentContext, AgentResult, ProgressCallback
+from app.agents.base import AgentContext, AgentResult, BaseAgent, ProgressCallback
 from app.database.repository import (
     AgentAttemptRecord,
     AgentAttemptRepository,
@@ -151,7 +151,12 @@ class FallbackPolicy:
 
         if not self.enabled:
             return []
-        order = [a.strip() for a in settings.AGENT_FALLBACK_ORDER.split(",") if a.strip()]
+        supported = {"antigravity", "codex"}
+        order = [
+            name
+            for raw_name in settings.AGENT_FALLBACK_ORDER.split(",")
+            if (name := raw_name.strip().lower()) in supported
+        ]
         if not order:
             return []
         seen = [primary.lower()]
@@ -210,10 +215,11 @@ class AgentRouter:
             attempt_id = await self._repo.start_attempt(job_id, index + 1, name, "cli")
             if progress is not None:
                 await progress.report(
-                    f"🤖 Running agent `{name}` (attempt {index + 1}/{len(candidates)})...",
+                    f" Running agent `{name}` (attempt {index + 1}/{len(candidates)})...",
                     phase="implementing",
                 )
 
+            agent = None
             try:
                 agent = agent_factory(name)
                 run_coro = _call_run(agent, context, workspace_path, on_progress)
@@ -260,6 +266,9 @@ class AgentRouter:
                     used_fallback=used_fallback,
                     code=last_code,
                 )
+            finally:
+                if isinstance(agent, BaseAgent):
+                    await agent.stop()
 
             if result.success:
                 await self._repo.finish_attempt(attempt_id, AgentAttemptStatus.SUCCEEDED)
@@ -297,7 +306,7 @@ class AgentRouter:
         progress: ProgressReporter | None,
     ) -> None:
         msg = (
-            f"↩️ Agent `{from_agent}` failed with retryable infra failure "
+            f" Agent `{from_agent}` failed with retryable infra failure "
             f"`{code}` — falling back to `{to_agent}`."
         )
         logger.warning(msg)

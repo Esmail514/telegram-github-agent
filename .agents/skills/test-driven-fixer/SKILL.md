@@ -17,7 +17,7 @@ understood — return to [issue-analyzer](../issue-analyzer/SKILL.md).
 
 - Locate the matching test file in `tests/` (`test_<area>.py`). Test data setup
   is done in `tests/conftest.py` (autouse env mocks reset
-  `settings_module._settings_instance`; `DEFAULT_AGENT=opencode`).
+  `settings_module._settings_instance`; `DEFAULT_AGENT=antigravity`).
 - Express the bug: `Given <state>, when <action>, then <expected>`.
 - Run only that test and confirm it FAILS for the right reason
   (`py -m pytest tests/test_<area>.py -k <name>`).

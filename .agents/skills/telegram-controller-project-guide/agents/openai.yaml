@@ -1,0 +1,4 @@
+interface:
+  display_name: "Telegram Controller Project Guide"
+  short_description: "Architecture and cross-layer review for this bot"
+  default_prompt: "Use $telegram-controller-project-guide to trace this bot's architecture and review the relevant end-to-end contracts without changing production code."

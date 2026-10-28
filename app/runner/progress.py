@@ -17,7 +17,7 @@ from app.database.repository import Database, JobEventRepository
 
 NotifyFn = Callable[..., Awaitable[None]]
 
-DEFAULT_THROTTLE_SECONDS = 10.0
+DEFAULT_THROTTLE_SECONDS = 30.0
 
 
 class ProgressReporter:

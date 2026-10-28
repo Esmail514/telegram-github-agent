@@ -1,5 +1,5 @@
 """
-Agent transport abstraction — Cli / Desktop / Api.
+Agent transport abstraction — CLI / API.
 
 A transport is *how* the controller talks to an agent. The goal of this layer
 is to make the fallback architecture explicit and testable without inventing
@@ -7,10 +7,6 @@ interfaces:
 
 - `CliTransport`     — real subprocess execution of a native CLI (opencode,
                        codex, agy). Fully supported.
-- `DesktopTransport` — deliberately probes UNAVAILABLE unless a concrete,
-                       actually-documented local IPC spec is implemented.
-                       This controller will NOT invent ports/IPC protocols,
-                       so today it is honest about not supporting one.
 - `ApiTransport`     — reserved for documented HTTP APIs; UNAVAILABLE unless a
                        subclass provides a real endpoint.
 
@@ -28,11 +24,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.agents.process_cleanup import finish_process, terminate_process
+
 logger = logging.getLogger(__name__)
 
 # Transport kinds
 CLI = "cli"
-DESKTOP = "desktop"
 API = "api"
 
 # Availability
@@ -188,82 +185,43 @@ class CliTransport(AgentTransport):
                     break
                 decoded = line.decode(errors="replace").rstrip("\r\n")
                 if decoded:
+                    if total > 32 * 1024:
+                        continue
                     sink.append(decoded)
                     total += len(decoded)
                     if total > 32 * 1024:
                         sink.append("...[output truncated]")
-                        break
+                        continue
                     if on_output is not None:
                         await on_output(decoded)
 
         out_task = asyncio.create_task(_read(proc.stdout, out_lines))
         err_task = asyncio.create_task(_read(proc.stderr, err_lines))
         try:
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
-        except TimeoutError:
-            await self.stop()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=timeout)
+            except TimeoutError:
+                await self.stop()
+                return TransportRunResult(
+                    returncode=-1,
+                    output="\n".join(out_lines),
+                    error="\n".join(err_lines),
+                    timed_out=True,
+                )
             await asyncio.gather(out_task, err_task, return_exceptions=True)
-            self._active_proc = None
             return TransportRunResult(
-                returncode=-1,
+                returncode=proc.returncode or 0,
                 output="\n".join(out_lines),
                 error="\n".join(err_lines),
-                timed_out=True,
             )
-        await asyncio.gather(out_task, err_task, return_exceptions=True)
-        self._active_proc = None
-        return TransportRunResult(
-            returncode=proc.returncode or 0,
-            output="\n".join(out_lines),
-            error="\n".join(err_lines),
-        )
-
-    async def stop(self) -> None:
-        proc = self._active_proc
-        if proc is None or proc.returncode is not None:
-            return
-        try:
-            proc.terminate()
-            await asyncio.wait_for(proc.wait(), timeout=5.0)
-        except TimeoutError:
+        finally:
             try:
-                proc.kill()
-                await proc.wait()
-            except ProcessLookupError:
-                pass
-        except ProcessLookupError:
-            pass
-        self._active_proc = None
-
-
-class DesktopTransport(AgentTransport):
-    """Deliberately honest placeholder.
-
-    The controller has no verified, documented local IPC specification for any
-    desktop agent. Rather than inventing ports / message protocols (which the
-    trust boundary forbids), this transport always probes UNAVAILABLE.
-    """
-
-    transport_type = DESKTOP
-
-    def __init__(self, agent_name: str) -> None:
-        self._name = agent_name
-
-    async def probe(self) -> TransportAvailability:
-        return TransportAvailability(
-            UNAVAILABLE,
-            DESKTOP,
-            "no supported local IPC mechanism is implemented for "
-            f"desktop agent '{self._name}'; refusing to invent an API",
-        )
-
-    async def run(self, *_: Any, **__: Any) -> TransportRunResult:  # type: ignore[override]
-        raise TransportUnavailableError(
-            "Desktop transport is not supported; it probes UNAVAILABLE."
-        )
+                await finish_process(proc, (out_task, err_task))
+            finally:
+                self._active_proc = None
 
     async def stop(self) -> None:
-        return None
+        await terminate_process(self._active_proc)
 
 
 class ApiTransport(AgentTransport):
@@ -306,21 +264,14 @@ def agent_cli_command(agent_name: str) -> str | None:
     return {
         "antigravity": settings.ANTIGRAVITY_COMMAND,
         "codex": settings.CODEX_COMMAND,
-        "opencode": settings.OPENCODE_COMMAND,
-        "claude": "claude",
-        "gemini": "gemini",
     }.get(agent_name.lower())
 
 
 def transports_for_agent(agent_name: str) -> list[AgentTransport]:
-    """Ordered candidates: native CLI first, then desktop (probe-only)."""
+    """Return the one supported native CLI transport for an agent."""
     name = agent_name.lower()
     command = agent_cli_command(name)
-    transports: list[AgentTransport] = []
-    if command:
-        transports.append(CliTransport(command, agent_name=name))
-    transports.append(DesktopTransport(name))
-    return transports
+    return [CliTransport(command, agent_name=name)] if command else []
 
 
 async def probe_agent(agent_name: str, timeout: float = 10.0) -> AgentCapabilities:

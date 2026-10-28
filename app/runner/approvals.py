@@ -23,10 +23,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
+import stat
 from collections.abc import Callable
 from fnmatch import fnmatch
+from pathlib import Path
 from typing import Any
 
+from app.agents.process_cleanup import terminate_process
 from app.database.repository import (
     ApprovalRecord,
     ApprovalRepository,
@@ -142,7 +146,7 @@ class RiskClassifier:
 class ApprovalPolicy:
     """Decides whether a gate requires operator approval."""
 
-    MODES = ("autonomous", "before_commit", "before_push", "before_pr")
+    MODES = ("autonomous", "before_commit", "before_push", "before_pr", "always_before_commit")
 
     def __init__(self, mode: str | None = None) -> None:
         from app.config.settings import settings
@@ -162,6 +166,8 @@ class ApprovalPolicy:
         """True when the operator must approve this gate."""
         if self._mode == "autonomous":
             return False
+        if self._mode == "always_before_commit":
+            return stage == BEFORE_COMMIT
         if risk == LOW:
             return False
         mode_gate = {
@@ -173,36 +179,79 @@ class ApprovalPolicy:
 
 
 class _PendingApproval:
-    __slots__ = ("event", "outcome")
+    __slots__ = ("event", "job_id", "outcome")
 
-    def __init__(self) -> None:
+    def __init__(self, job_id: str) -> None:
         self.event = asyncio.Event()
+        self.job_id = job_id
         self.outcome: str | None = None
 
 
 async def _compute_fingerprint(workspace_path: str) -> str | None:
-    """SHA-256 over the current git state (porcelain + HEAD + branch)."""
-    import asyncio as _a
-
-    cmd = (
-        "git status --porcelain && git rev-parse HEAD && git symbolic-ref --short HEAD"
-    )
-    # Deliberately via argv, never via a shell.
+    """Bind an approval to branch, index, working tree and untracked file bytes."""
     try:
-        proc = await _a.create_subprocess_exec(
-            "cmd", "/c", cmd,
-            cwd=workspace_path,
-            stdout=_a.subprocess.PIPE,
-            stderr=_a.subprocess.PIPE,
+        digest = hashlib.sha256()
+        for args in (
+            ("rev-parse", "HEAD"),
+            ("rev-parse", "--abbrev-ref", "HEAD"),
+            ("status", "--porcelain=v1", "-z"),
+            ("diff", "--no-ext-diff", "--no-textconv", "--binary", "--"),
+            ("diff", "--cached", "--no-ext-diff", "--no-textconv", "--binary", "--"),
+        ):
+            output = await _fingerprint_git(workspace_path, *args)
+            digest.update(len(output).to_bytes(8, "big"))
+            digest.update(output)
+        untracked = await _fingerprint_git(
+            workspace_path, "ls-files", "--others", "--exclude-standard", "-z"
         )
-        stdout_b, _ = await _a.wait_for(proc.communicate(), timeout=20.0)
-        if proc.returncode != 0:
-            return None
-        raw = stdout_b.decode(errors="replace")
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        digest.update(await asyncio.to_thread(_untracked_fingerprint, Path(workspace_path), untracked))
+        return digest.hexdigest()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Fingerprint computation failed: %s", exc)
+        logger.warning("Approval fingerprint unavailable (%s)", type(exc).__name__)
         return None
+
+
+async def _fingerprint_git(workspace_path: str, *args: str) -> bytes:
+    process = await asyncio.create_subprocess_exec(
+        "git", "-c", "core.fsmonitor=false", *args,
+        cwd=workspace_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=20.0)
+        if process.returncode != 0:
+            raise ValueError("Git state could not be read")
+        return stdout
+    finally:
+        await terminate_process(process)
+
+
+def _untracked_fingerprint(workspace: Path, filenames: bytes) -> bytes:
+    root = workspace.resolve()
+    digest = hashlib.sha256()
+    for raw_name in sorted(name for name in filenames.split(b"\0") if name):
+        relative_path = Path(os.fsdecode(raw_name))
+        path = root / relative_path
+        if relative_path.is_absolute() or not path.parent.resolve().is_relative_to(root):
+            raise ValueError("Untracked path is outside the workspace")
+        digest.update(len(raw_name).to_bytes(8, "big"))
+        digest.update(raw_name)
+        content = hashlib.sha256()
+        if path.is_symlink():
+            digest.update(b"link")
+            content.update(os.fsencode(os.readlink(path)))
+        else:
+            digest.update(b"file")
+            mode = path.stat().st_mode
+            if not stat.S_ISREG(mode):
+                raise ValueError("Untracked path is not a regular file")
+            digest.update(str(mode & 0o111).encode("ascii"))
+            with path.open("rb") as file:
+                while chunk := file.read(65536):
+                    content.update(chunk)
+        digest.update(content.digest())
+    return digest.digest()
 
 
 class ApprovalCoordinator:
@@ -235,7 +284,7 @@ class ApprovalCoordinator:
         if workspace_path:
             fingerprint = await self._compute_fingerprint(workspace_path)
         record = await self._repo.create(job_id, stage, risk, fingerprint)
-        self._pending[record.id] = _PendingApproval()
+        self._pending[record.id] = _PendingApproval(job_id)
         logger.info(
             "Approval requested: job=%s stage=%s risk=%s approval_id=%d",
             job_id, stage, risk, record.id,
@@ -249,11 +298,17 @@ class ApprovalCoordinator:
             return UNKNOWN
         timeout = self._timeout if timeout is None else timeout
         try:
-            await asyncio.wait_for(pending.event.wait(), timeout=timeout)
-        except TimeoutError:
-            await self._expire(approval_id)
-            return EXPIRED
-        return pending.outcome or UNKNOWN
+            try:
+                await asyncio.wait_for(pending.event.wait(), timeout=timeout)
+            except TimeoutError:
+                await self._expire(approval_id)
+                return EXPIRED
+            except asyncio.CancelledError:
+                await self._repo.cancel_pending(pending.job_id)
+                raise
+            return pending.outcome or UNKNOWN
+        finally:
+            self._pending.pop(approval_id, None)
 
     async def decide(
         self,
@@ -276,7 +331,7 @@ class ApprovalCoordinator:
             return ALREADY_DECIDED
 
         # Code changed since the approval was requested → stale.
-        if await self._fingerprint_stale(record, workspace_path):
+        if decision == APPROVED and await self._fingerprint_stale(record, workspace_path):
             await self._repo.decide(approval_id, ApprovalStatus.STALE, decision_by, note=decision)
             self._resolve(approval_id, STALE)
             return STALE
@@ -287,21 +342,24 @@ class ApprovalCoordinator:
         return decision
 
     def is_pending(self, approval_id: int) -> bool:
-        return approval_id in self._pending
+        pending = self._pending.get(approval_id)
+        return pending is not None and not pending.event.is_set()
 
     async def cancel_pending(self, job_id: str) -> None:
         """Cancel approvals still awaiting a decision (e.g. job stopped)."""
         await self._repo.cancel_pending(job_id)
-        pending_ids = [aid for aid, p in self._pending.items() if not p.event.is_set()]
+        pending_ids = [aid for aid, p in self._pending.items() if p.job_id == job_id]
         for aid in pending_ids:
-            self._resolve(aid, "CANCELLED")
+            if not self._pending[aid].event.is_set():
+                self._resolve(aid, "CANCELLED")
+            self._pending.pop(aid, None)
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
     def _resolve(self, approval_id: int, outcome: str) -> None:
-        pending = self._pending.pop(approval_id, None)
+        pending = self._pending.get(approval_id)
         if pending is not None:
             pending.outcome = outcome
             pending.event.set()
@@ -314,9 +372,9 @@ class ApprovalCoordinator:
         self, record: ApprovalRecord, workspace_path: str | None
     ) -> bool:
         if not record.diff_fingerprint or not workspace_path:
-            return False
+            return True
         current = await self._compute_fingerprint(workspace_path)
-        return bool(current and current != record.diff_fingerprint)
+        return current is None or current != record.diff_fingerprint
 
     async def _compute_fingerprint(self, workspace_path: str) -> str | None:
         if self._fingerprint_fn is not None:

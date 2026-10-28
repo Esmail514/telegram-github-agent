@@ -32,7 +32,7 @@ Always access GitHub through `app.github.client.github_client` which manages tok
 1. **Never commit to default branch (`main` / `master`)**:
    Always create an isolated branch for every job:
    ```python
-   branch = f"agent/issue-{issue_number}"
+   branch = f"ai/issue-{issue_number}"
    ```
 2. **Identity Configuration**:
    Before committing, configure the bot identity in the cloned repository:
@@ -40,7 +40,8 @@ Always access GitHub through `app.github.client.github_client` which manages tok
    await git_service.configure_identity(workspace_path, "AI Agent", "ai-agent@noreply.local")
    ```
 3. **Workspace Isolation**:
-   Keep cloned workspaces in `./workspaces/{owner}/{repo}` to allow reuse across jobs while isolating branches.
+   Keep cloned workspaces under configured `WORKSPACE_DIR/{owner}/{repo}`;
+   do not treat a user-selected local workspace as a disposable clone.
 
 ---
 

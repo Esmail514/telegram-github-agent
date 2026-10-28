@@ -14,9 +14,11 @@ from app.telegram.keyboards import (
     issue_detail_keyboard,
     issues_keyboard,
     main_menu_keyboard,
+    polish_newissue_keyboard,
     project_detail_keyboard,
     projects_keyboard,
     repos_keyboard,
+    sysinfo_keyboard,
     workspace_source_keyboard,
 )
 
@@ -50,22 +52,24 @@ def _make_mock_issue(number: int = 1, title: str = "Test Issue") -> IssueInfo:
 def test_main_menu_keyboard():
     from app.telegram.keyboards import github_menu_keyboard
     kb = main_menu_keyboard()
-    main_callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    labels = [btn.text for row in kb.keyboard for btn in row]
     # Top-level items always present
-    assert "menu:projects" in main_callbacks
-    assert "menu:run" in main_callbacks
-    assert "menu:status" in main_callbacks
-    assert "menu:github" in main_callbacks
-    assert "menu:accounts" in main_callbacks
-    assert "menu:sysinfo" in main_callbacks
+    assert "📁 المشاريع المحلية" in labels
+    assert "📊 حالة المهمة" in labels
+    assert "🐙 GitHub" in labels
+    assert "🖥️ موارد الجهاز" in labels
+    assert "💻 الاستخدام الشخصي" in labels
     # GitHub items live inside the github submenu, not the main menu
-    assert "menu:repos" not in main_callbacks
+    assert "المستودعات" not in labels
     github_callbacks = [btn.callback_data for row in github_menu_keyboard().inline_keyboard for btn in row]
-    assert "menu:repos" in github_callbacks
-    assert "menu:issues" in github_callbacks
-    assert "menu:prs" in github_callbacks
-    assert "menu:newissue" in github_callbacks
-    assert "menu:schedule" in github_callbacks
+    assert github_callbacks == ["menu:newissue", "menu:schedule:issue", "menu:schedule:local"]
+
+
+def test_navigation_buttons_do_not_offer_cancel():
+    keyboard = repos_keyboard([], include_cancel=True)
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+
+    assert all("إلغاء" not in label for label in labels)
 
 
 def test_repos_keyboard_pagination_and_cancel():
@@ -88,7 +92,20 @@ def test_repos_keyboard_pagination_and_cancel():
     assert "run_repo_page:0" in callbacks  # Prev
     assert "run_repo_page:2" in callbacks  # Next
     # Check cancel button
-    assert "cancel" in callbacks
+    assert "cancel" not in callbacks
+
+
+def test_private_repository_has_lock_indicator():
+    keyboard = repos_keyboard([_make_mock_repo("private-repo", private=True)])
+
+    assert keyboard.inline_keyboard[0][0].text == "🔒 private-repo"
+
+
+def test_sysinfo_keyboard_offers_only_refresh_and_back():
+    keyboard = sysinfo_keyboard()
+    callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+
+    assert callbacks == ["sysinfo:refresh", "sysinfo:back"]
 
 
 def test_issues_keyboard_pagination_and_cancel():
@@ -108,7 +125,7 @@ def test_issues_keyboard_pagination_and_cancel():
 
     assert "issue:0" in callbacks
     assert "run_issue_page:1" in callbacks
-    assert "cancel" in callbacks
+    assert "cancel" not in callbacks
 
 
 def test_confirm_run_keyboard():
@@ -116,15 +133,27 @@ def test_confirm_run_keyboard():
     callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
     assert "confirm_run:antigravity:42" in callbacks
     assert "confirm_run:codex:42" in callbacks
-    assert "cancel" in callbacks
+    assert "cancel" not in callbacks
 
 
 def test_issue_detail_keyboard():
     issue = _make_mock_issue(123)
     kb = issue_detail_keyboard(issue)
-    assert kb.inline_keyboard[0][0].url == issue.html_url
-    assert kb.inline_keyboard[1][0].callback_data == "polish_issue:123"
-    assert kb.inline_keyboard[2][0].callback_data == "run_issue:123"
+    callbacks = [button.callback_data for row in kb.inline_keyboard for button in row]
+    assert "polish_issue:123" in callbacks
+    assert "run_issue:123" not in callbacks
+    assert all(button.url is None for row in kb.inline_keyboard for button in row)
+
+
+def test_new_issue_confirmation_offers_create_and_edit() -> None:
+    keyboard = polish_newissue_keyboard()
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+
+    assert "إنشاء الآن" in labels
+    assert "تعديل المسودة" in labels
+    assert "newissue:confirm" in callbacks
+    assert "polish_newissue" in callbacks
 
 
 def test_workspace_source_keyboard():
@@ -132,7 +161,7 @@ def test_workspace_source_keyboard():
     callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
     assert CB_WS_CLONE in callbacks
     assert CB_WS_LOCAL in callbacks
-    assert "cancel" in callbacks
+    assert "cancel" not in callbacks
 
 
 def test_projects_keyboard():
@@ -154,7 +183,7 @@ def test_projects_keyboard():
     assert "proj_page:1" in callbacks
     # Change dir and cancel
     assert CB_SETDIR in callbacks
-    assert "cancel" in callbacks
+    assert "cancel" not in callbacks
 
 
 def test_project_detail_keyboard():
@@ -164,7 +193,7 @@ def test_project_detail_keyboard():
     assert "issues_for:acme/demo" in cbs1
     assert "newissue_for:acme/demo" in cbs1
     assert "run_proj:0" in cbs1
-    assert "prs_for:acme/demo" in cbs1
+    assert "prs_for:acme/demo" not in cbs1
 
     # Local only (no GitHub remote)
     kb2 = project_detail_keyboard(1, has_github_remote=False)

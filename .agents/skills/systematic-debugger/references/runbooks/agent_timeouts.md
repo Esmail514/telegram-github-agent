@@ -1,7 +1,7 @@
 # Runbook: agent subprocess hangs and timeouts
 
-Applies to `app/agents/antigravity.py`, `app/agents/opencode.py`,
-`app/agents/codex.py`, and the git/workspace subprocesses in
+Applies to `app/agents/antigravity.py`, `app/agents/codex.py`,
+legacy `app/agents/opencode.py`, and the git/workspace subprocesses in
 `app/runner/git.py` / `app/runner/workspace.py`.
 
 ## Symptoms

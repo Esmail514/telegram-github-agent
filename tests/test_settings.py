@@ -34,7 +34,7 @@ def test_settings_accepts_pat(monkeypatch):
     from app.config.settings import Settings
     s = Settings(_env_file=None)
     assert s.TELEGRAM_ALLOWED_USER_ID == 12345
-    assert s.DEFAULT_AGENT == "opencode"
+    assert s.DEFAULT_AGENT == "antigravity"
 
 
 def test_default_values(monkeypatch):
@@ -42,7 +42,7 @@ def test_default_values(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:fake_token_for_testing_only_not_real")
     monkeypatch.setenv("TELEGRAM_ALLOWED_USER_ID", "99999")
     monkeypatch.setenv("GITHUB_TOKEN", "ghp_" + "B" * 36)
-    monkeypatch.setenv("DEFAULT_AGENT", "opencode")
+    monkeypatch.setenv("DEFAULT_AGENT", "antigravity")
 
     from app.config.settings import Settings
     s = Settings(_env_file=None)
@@ -51,4 +51,4 @@ def test_default_values(monkeypatch):
     assert s.GIT_OPERATION_TIMEOUT_SECONDS == 120.0
     assert s.GIT_NETWORK_TIMEOUT_SECONDS == 600.0
     assert s.LOG_LEVEL == "INFO"
-    assert s.OPENCODE_COMMAND == "opencode"
+    assert s.CODEX_COMMAND == "codex"
