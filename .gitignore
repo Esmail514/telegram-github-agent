@@ -24,6 +24,7 @@ workspaces/
 *.db-shm
 *.sqlite
 *.sqlite3
+local_prompt_schedules.csv
 
 # =============================================================================
 # Python

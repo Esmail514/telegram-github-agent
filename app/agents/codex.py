@@ -158,7 +158,11 @@ class CodexAgent(BaseAgent):
             return AgentResult(
                 success=success,
                 exit_code=exit_code,
-                summary=collected_output.last_lines(15) or "Codex CLI finished.",
+                summary=(
+                    collected_output.get_text(2500)
+                    or collected_output.last_lines(15)
+                    or "Codex CLI finished."
+                ),
                 error=error_output.last_lines(10) if not success else None,
                 raw_output=collected_output.last_lines(100),
                 token_exhausted=collected_output.token_exhausted or error_output.token_exhausted,

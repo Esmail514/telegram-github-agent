@@ -97,7 +97,8 @@ async def test_antigravity_continuation_prompt(tmp_path: Path) -> None:
         assert result.success is True
         # Verify that prompt passed to CLI execution contained continuation instructions
         cmd_args = mock_exec.call_args[0]
-        prompt_arg = cmd_args[2]  # ["agy", "--prompt", <prompt>]
+        prompt_idx = cmd_args.index("--prompt")
+        prompt_arg = cmd_args[prompt_idx + 1]  # ["agy", "--prompt", <prompt>]
         assert "RESUMED TASK CONTINUATION" in prompt_arg
         assert "git status" in prompt_arg
 

@@ -90,7 +90,7 @@ def _format_completion_message(
 
     clean_summary = (summary or "").strip()
     if clean_summary:
-        lines.append(f"\n📋 *الأشياء التي تمت (الملخص):*\n{clean_summary[:1200]}")
+        lines.append(f"\n📋 *الأشياء التي تمت (الملخص):*\n{clean_summary[:2500]}")
     else:
         lines.append("\n📋 *الأشياء التي تمت:*\nتم تنفيذ التعديلات المطلوبة وتجهيز التغييرات بنجاح.")
 

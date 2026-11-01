@@ -20,6 +20,37 @@ from app.config.settings import settings
 logger = logging.getLogger(__name__)
 
 
+def build_antigravity_cli_command(
+    executable: str,
+    prompt: str,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
+) -> list[str]:
+    """
+    Build a non-interactive, auto-approving Antigravity CLI invocation.
+
+    Includes --dangerously-skip-permissions so headless background execution
+    does not auto-deny tool/file modification permissions.
+    """
+    cmd = [executable, "--dangerously-skip-permissions"]
+    if model and model.lower() != "default":
+        cmd.extend(["--model", model])
+    if reasoning_effort and reasoning_effort.lower() in {"low", "medium", "high", "xhigh", "max"}:
+        cmd.extend(["--effort", reasoning_effort.lower()])
+
+    # Guard against Windows command-line string limits (~32k chars)
+    if len(prompt) > 28000:
+        cli_prompt = (
+            "Please read the full instructions and task details in `.antigravity_task.md` in the current working directory, "
+            "implement all requirements, test your work, and finish when done."
+        )
+    else:
+        cli_prompt = prompt
+
+    cmd.extend(["--prompt", cli_prompt])
+    return cmd
+
+
 class AntigravityAgent(BaseAgent):
     name = "antigravity"
 
@@ -65,10 +96,14 @@ class AntigravityAgent(BaseAgent):
 
         await on_progress(f"🤖 Launching Antigravity CLI ({cmd_name})...")
 
-        # Command arguments for non-interactive execution
-        # Supports both: agy --task "<prompt>" or agy run <file>
+        # Command arguments for non-interactive execution with auto-approval
         executable = cmd_path or cmd_name
-        full_cmd = [executable, "--prompt", prompt]
+        full_cmd = build_antigravity_cli_command(
+            executable=executable,
+            prompt=prompt,
+            model=context.model,
+            reasoning_effort=context.reasoning_effort,
+        )
 
         env = os.environ.copy()
         env.update(settings.get_agent_env())
@@ -121,7 +156,11 @@ class AntigravityAgent(BaseAgent):
                     token_exhausted=True,
                 )
 
-            summary_text = collected_output.last_lines(15) or "Antigravity CLI completed."
+            summary_text = (
+                collected_output.get_text(2500)
+                or collected_output.last_lines(15)
+                or "Antigravity CLI completed."
+            )
 
             return AgentResult(
                 success=success,

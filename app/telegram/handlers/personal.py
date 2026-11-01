@@ -240,7 +240,26 @@ async def task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    prompt = " ".join(args).strip()
+    raw_prompt = " ".join(args).strip()
+    agent_name = None
+    lower_prompt = raw_prompt.lower()
+    if lower_prompt.startswith("codex:"):
+        agent_name = "codex"
+        prompt = raw_prompt[6:].strip()
+    elif lower_prompt.startswith("antigravity:"):
+        agent_name = "antigravity"
+        prompt = raw_prompt[12:].strip()
+    elif lower_prompt.startswith("agy:"):
+        agent_name = "antigravity"
+        prompt = raw_prompt[4:].strip()
+    elif lower_prompt.startswith("--agent=codex"):
+        agent_name = "codex"
+        prompt = raw_prompt[13:].strip()
+    elif lower_prompt.startswith("--agent=antigravity"):
+        agent_name = "antigravity"
+        prompt = raw_prompt[19:].strip()
+    else:
+        prompt = raw_prompt
 
     if personal_task_manager.is_busy():
         info = personal_task_manager.get_active_info()
@@ -285,6 +304,7 @@ async def task_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         result = await personal_task_manager.run_task(
             prompt=prompt,
             on_progress=_on_progress,
+            agent_name=agent_name,
         )
 
         icon = "" if result.success else ""

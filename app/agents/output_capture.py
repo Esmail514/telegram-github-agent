@@ -32,6 +32,13 @@ class OutputCapture:
     def last_lines(self, count: int) -> str:
         return "\n".join(self._tail.decode("utf-8", errors="replace").splitlines()[-count:])
 
+    def get_text(self, max_chars: int = 4000) -> str:
+        """Return the text output produced by the agent, bounded to max_chars."""
+        text = self._tail.decode("utf-8", errors="replace").strip()
+        if len(text) > max_chars:
+            return text[-max_chars:].strip()
+        return text
+
     async def drain(self, stream: asyncio.StreamReader | None) -> None:
         if stream is None:
             return
