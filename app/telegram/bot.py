@@ -286,7 +286,7 @@ def build_application(token: str) -> Application:
     app.add_handler(CallbackQueryHandler(sched_local_open_callback, pattern="^local_sched_open:"))
     app.add_handler(CallbackQueryHandler(sched_start_now_callback, pattern="^sched_now:\\d+$"))
     app.add_handler(CallbackQueryHandler(sched_local_start_now_callback, pattern="^local_sched_now:"))
-    app.add_handler(CallbackQueryHandler(schedule_list_command, pattern="^sched_list(_completed)?$"))
+    app.add_handler(CallbackQueryHandler(schedule_list_command, pattern=r"^sched_list(_(completed|pending|all))?$"))
     app.add_handler(CallbackQueryHandler(csv_trust_preview_callback, pattern="^csv_trust:"))
     app.add_handler(CallbackQueryHandler(csv_trust_confirm_callback, pattern="^csv_trust_confirm$"))
     app.add_handler(CallbackQueryHandler(csv_trust_back_callback, pattern="^csv_trust_back$"))

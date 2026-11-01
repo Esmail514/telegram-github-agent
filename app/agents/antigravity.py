@@ -16,6 +16,7 @@ from app.agents.base import AgentContext, AgentResult, BaseAgent, ProgressCallba
 from app.agents.output_capture import OutputCapture
 from app.agents.process_cleanup import finish_process, terminate_process
 from app.config.settings import settings
+from app.runner.terminal_viewer import TerminalViewer
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,16 @@ class AntigravityAgent(BaseAgent):
         error_output = OutputCapture()
         readers: list[asyncio.Task] = []
 
+        viewer = TerminalViewer(
+            workspace_path=workspace_path,
+            title=f"Antigravity Agent ({workspace_path.name})",
+            auto_close_seconds=settings.AGENT_TERMINAL_AUTO_CLOSE_SECONDS,
+            enabled=settings.SHOW_AGENT_TERMINAL,
+        )
+        await viewer.start()
+        collected_output.add_listener(viewer.write)
+        error_output.add_listener(viewer.write)
+
         try:
             self._process = await asyncio.create_subprocess_exec(
                 *full_cmd,
@@ -193,6 +204,13 @@ class AntigravityAgent(BaseAgent):
                 error=str(exc),
             )
         finally:
+            try:
+                await viewer.finish(
+                    success=success if "success" in locals() else False,
+                    summary=summary_text if "summary_text" in locals() else "",
+                )
+            except Exception:
+                pass
             try:
                 await finish_process(self._process, readers)
             finally:

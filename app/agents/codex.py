@@ -22,6 +22,7 @@ from app.agents.base import AgentContext, AgentResult, BaseAgent, ProgressCallba
 from app.agents.output_capture import OutputCapture
 from app.agents.process_cleanup import finish_process, terminate_process
 from app.config.settings import settings
+from app.runner.terminal_viewer import TerminalViewer
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,16 @@ class CodexAgent(BaseAgent):
         error_output = OutputCapture()
         readers: list[asyncio.Task] = []
 
+        viewer = TerminalViewer(
+            workspace_path=workspace_path,
+            title=f"Codex Agent ({workspace_path.name})",
+            auto_close_seconds=settings.AGENT_TERMINAL_AUTO_CLOSE_SECONDS,
+            enabled=settings.SHOW_AGENT_TERMINAL,
+        )
+        await viewer.start()
+        collected_output.add_listener(viewer.write)
+        error_output.add_listener(viewer.write)
+
         try:
             self._active_proc = await asyncio.create_subprocess_exec(
                 *full_cmd,
@@ -184,6 +195,13 @@ class CodexAgent(BaseAgent):
                 error=str(exc),
             )
         finally:
+            try:
+                await viewer.finish(
+                    success=success if "success" in locals() else False,
+                    summary=collected_output.get_text(500),
+                )
+            except Exception:
+                pass
             await finish_process(self._active_proc, readers)
 
     async def _run_direct_api(

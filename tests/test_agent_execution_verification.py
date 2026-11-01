@@ -465,3 +465,84 @@ async def test_check_10_personal_task_runner_with_chosen_agent(tmp_path: Path):
     assert result.success is True
     assert "Optimized files" in result.summary
     assert manager.is_busy() is False
+
+
+# ---------------------------------------------------------------------------
+# Check 11: Schedule Fields for Completed and Uncompleted Tasks
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_schedule_fields_completed_and_uncompleted(test_db):
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from app.database.schedule_repository import ScheduleRepository
+    from app.telegram.handlers.schedule import _show_all_schedules, schedule_list_command
+
+    update = MagicMock()
+    update.effective_user.id = 123456789
+    update.effective_chat.id = 999
+    update.callback_query = MagicMock()
+    context = MagicMock()
+    context.bot_data = {"db": test_db}
+
+    schedule_repo = ScheduleRepository(test_db)
+    sched_time = datetime.now(UTC) + timedelta(hours=2)
+    # Job #10: completed
+    await schedule_repo.create(
+        repo_full_name="demo/repo",
+        issue_number=10,
+        agent="antigravity",
+        scheduled_at=sched_time,
+        chat_id=999,
+    )
+    # Job #20: pending
+    await schedule_repo.create(
+        repo_full_name="demo/repo",
+        issue_number=20,
+        agent="codex",
+        scheduled_at=sched_time + timedelta(hours=1),
+        chat_id=999,
+    )
+    await test_db._conn.execute("UPDATE scheduled_jobs SET status = 'COMPLETED' WHERE issue_number = 10")
+    await test_db._conn.commit()
+
+    with (
+        patch("app.telegram.handlers.schedule._local_schedules_for_chat", AsyncMock(return_value=[])),
+        patch("app.telegram.handlers.schedule._show") as mock_show,
+    ):
+        # 1. Uncompleted field (default / filter_type="pending" / show_completed=False)
+        await _show_all_schedules(update, context, filter_type="pending")
+        text, markup = mock_show.call_args[0][1], mock_show.call_args[0][2]
+        assert "التي لم تكتمل" in text
+        buttons = [btn.text for row in markup.inline_keyboard for btn in row]
+        assert any("#20" in b for b in buttons), "Pending job must appear in uncompleted field"
+        assert not any("#10" in b for b in buttons), "Completed job must NOT appear in uncompleted field"
+        assert any("عرض المهام المكتملة" in b for b in buttons)
+        assert any("التي لم تكتمل" in b for b in buttons)
+
+        # 2. Completed field (filter_type="completed" / show_completed=True)
+        await _show_all_schedules(update, context, filter_type="completed")
+        text, markup = mock_show.call_args[0][1], mock_show.call_args[0][2]
+        assert "المكتملة" in text
+        buttons = [btn.text for row in markup.inline_keyboard for btn in row]
+        assert any("#10" in b for b in buttons), "Completed job must appear in completed field"
+        assert not any("#20" in b for b in buttons), "Pending job must NOT appear in completed field"
+        assert any("التي لم تكتمل" in b for b in buttons)
+        assert any("المكتملة" in b for b in buttons)
+
+        # 3. Via callback queries
+        update.callback_query.data = "sched_list_completed"
+        await schedule_list_command(update, context)
+        text, markup = mock_show.call_args[0][1], mock_show.call_args[0][2]
+        assert "المكتملة" in text
+        buttons = [btn.text for row in markup.inline_keyboard for btn in row]
+        assert any("#10" in b for b in buttons)
+        assert not any("#20" in b for b in buttons)
+
+        update.callback_query.data = "sched_list_pending"
+        await schedule_list_command(update, context)
+        text, markup = mock_show.call_args[0][1], mock_show.call_args[0][2]
+        assert "التي لم تكتمل" in text
+        buttons = [btn.text for row in markup.inline_keyboard for btn in row]
+        assert any("#20" in b for b in buttons)
+        assert not any("#10" in b for b in buttons)

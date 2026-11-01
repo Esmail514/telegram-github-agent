@@ -146,6 +146,23 @@ class Settings(BaseSettings):
         "squash", description="Default PR merge strategy"
     )
 
+    # ------------------------------------------------------------------
+    # Agent live terminal viewer
+    # ------------------------------------------------------------------
+    SHOW_AGENT_TERMINAL: bool = Field(
+        True,
+        description="Whether to open a visible live terminal window on the desktop when running an AI agent",
+    )
+    AGENT_TERMINAL_AUTO_CLOSE_SECONDS: int = Field(
+        15,
+        ge=0,
+        le=3600,
+        description=(
+            "Seconds to keep the terminal window open after completion before auto-closing. "
+            "0 keeps the terminal open until the user presses a key."
+        ),
+    )
+
     # AI provider keys forwarded to agent subprocess
     ANTHROPIC_API_KEY: SecretStr | None = None
     OPENAI_API_KEY: SecretStr | None = None

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
 OUTPUT_TAIL_BYTES = 128 * 1024
 READ_CHUNK_BYTES = 16 * 1024
@@ -19,6 +20,15 @@ class OutputCapture:
         self._tail = bytearray()
         self._signal_tail = b""
         self.token_exhausted = False
+        self._listeners: list[Callable[[bytes], None]] = []
+
+    def add_listener(self, listener: Callable[[bytes], None]) -> None:
+        if listener not in self._listeners:
+            self._listeners.append(listener)
+
+    def remove_listener(self, listener: Callable[[bytes], None]) -> None:
+        if listener in self._listeners:
+            self._listeners.remove(listener)
 
     def append(self, chunk: bytes) -> None:
         signal_text = self._signal_tail + chunk.lower()
@@ -28,6 +38,11 @@ class OutputCapture:
         self._tail.extend(chunk)
         if len(self._tail) > OUTPUT_TAIL_BYTES:
             del self._tail[:-OUTPUT_TAIL_BYTES]
+        for listener in list(self._listeners):
+            try:
+                listener(chunk)
+            except Exception:
+                pass
 
     def last_lines(self, count: int) -> str:
         return "\n".join(self._tail.decode("utf-8", errors="replace").splitlines()[-count:])
