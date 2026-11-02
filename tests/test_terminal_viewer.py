@@ -105,3 +105,4 @@ async def test_output_capture_drain_streams_to_viewer(tmp_path: Path, monkeypatc
     log_content = viewer.log_file.read_text(encoding="utf-8")
     assert "Installing packages..." in log_content
     assert "Build complete." in log_content
+

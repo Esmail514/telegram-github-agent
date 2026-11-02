@@ -154,7 +154,7 @@ class Settings(BaseSettings):
         description="Whether to open a visible live terminal window on the desktop when running an AI agent",
     )
     AGENT_TERMINAL_AUTO_CLOSE_SECONDS: int = Field(
-        15,
+        0,
         ge=0,
         le=3600,
         description=(
