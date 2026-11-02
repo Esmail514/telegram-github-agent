@@ -574,9 +574,77 @@ async def _ask_for_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 @auth_required
 async def sched_prompt_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     assert update.message
-    prompt = (update.message.text or "").strip()
+    prompt = ""
+    photo_list = getattr(update.message, "photo", None)
+    doc = getattr(update.message, "document", None)
+    if photo_list:
+        photo = photo_list[-1]
+        caption = (getattr(update.message, "caption", "") or "").strip()
+        status_msg = await update.message.reply_text("📥 جاري استلام وتجهيز الصورة للمهمة...")
+        try:
+            tg_file = await asyncio.wait_for(context.bot.get_file(photo.file_id), timeout=25.0)
+            photo_bytes = await asyncio.wait_for(tg_file.download_as_bytearray(), timeout=30.0)
+            data = _schedule_data(context)
+            project_path = data.get("sched_project_path")
+            target_dir = Path(project_path) if project_path and Path(project_path).is_dir() else Path.cwd()
+            assets_dir = target_dir / ".agent_assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+            img_filename = f"task_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.jpg"
+            img_path = assets_dir / img_filename
+            img_path.write_bytes(bytes(photo_bytes))
+
+            rel_path = img_path.relative_to(target_dir) if target_dir in img_path.parents else img_path
+            if caption:
+                prompt = f"{caption}\n\n[صورة مرفقة للمهمة: {rel_path}]"
+            else:
+                prompt = f"قم بفحص وتطبيق التعديلات المطلوبة بناءً على الصورة المرفقة في {rel_path}"
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning("Could not download schedule task photo: %s", exc)
+            if caption:
+                prompt = caption
+            else:
+                await status_msg.edit_text("تعذر تحميل الصورة. يرجى كتابة الـ Prompt كنص:")
+                return SCHED_ENTER_PROMPT
+    elif doc and getattr(doc, "mime_type", "") and doc.mime_type.startswith("image/"):
+        caption = (getattr(update.message, "caption", "") or "").strip()
+        status_msg = await update.message.reply_text("📥 جاري استلام وتجهيز الصورة للمهمة...")
+        try:
+            tg_file = await asyncio.wait_for(context.bot.get_file(doc.file_id), timeout=25.0)
+            doc_bytes = await asyncio.wait_for(tg_file.download_as_bytearray(), timeout=30.0)
+            data = _schedule_data(context)
+            project_path = data.get("sched_project_path")
+            target_dir = Path(project_path) if project_path and Path(project_path).is_dir() else Path.cwd()
+            assets_dir = target_dir / ".agent_assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+            img_filename = doc.file_name or f"task_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.png"
+            img_path = assets_dir / img_filename
+            img_path.write_bytes(bytes(doc_bytes))
+
+            rel_path = img_path.relative_to(target_dir) if target_dir in img_path.parents else img_path
+            if caption:
+                prompt = f"{caption}\n\n[صورة مرفقة للمهمة: {rel_path}]"
+            else:
+                prompt = f"قم بفحص وتطبيق التعديلات المطلوبة بناءً على الصورة المرفقة في {rel_path}"
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning("Could not download schedule task document image: %s", exc)
+            if caption:
+                prompt = caption
+            else:
+                await status_msg.edit_text("تعذر تحميل الصورة. يرجى كتابة الـ Prompt كنص:")
+                return SCHED_ENTER_PROMPT
+    else:
+        prompt = (update.message.text or "").strip()
+
     if not prompt:
-        await update.message.reply_text("أرسل Prompt غير فارغ.")
+        await update.message.reply_text("أرسل Prompt أو صورة مع شرح غير فارغ.")
         return SCHED_ENTER_PROMPT
     if len(prompt) > 12000:
         await update.message.reply_text("الـ Prompt طويل جدًا. الحد هو 12000 حرف.")
@@ -1315,7 +1383,7 @@ def build_schedule_handler() -> ConversationHandler:
                 CallbackQueryHandler(sched_issue_page_callback, pattern="^sched_issue_page:"),
                 CallbackQueryHandler(sched_issue_selected_callback, pattern=r"^sched_issue:\d+$"),
             ],
-            SCHED_ENTER_PROMPT: [MessageHandler(_INPUT_TEXT, sched_prompt_received)],
+            SCHED_ENTER_PROMPT: [MessageHandler(_INPUT_TEXT | filters.PHOTO | filters.Document.IMAGE, sched_prompt_received)],
             SCHED_ENTER_TIME: [
                 CallbackQueryHandler(sched_time_choice_callback, pattern="^sched_time:"),
                 MessageHandler(_INPUT_TEXT, sched_time_received),

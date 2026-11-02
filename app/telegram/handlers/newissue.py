@@ -298,16 +298,19 @@ async def ni_enter_body(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         caption = (update.message.caption or "").strip()
         status_msg = await update.message.reply_text(" جاري رفع الصورة إلى GitHub...")
         try:
-            tg_file = await context.bot.get_file(photo.file_id)
-            photo_bytes = await tg_file.download_as_bytearray()
-            asset_url = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: asset_uploader.upload_issue_image(
-                    repo_full_name=repo,
-                    file_bytes=bytes(photo_bytes),
-                    filename="screenshot.jpg",
-                    mime_type="image/jpeg",
+            tg_file = await asyncio.wait_for(context.bot.get_file(photo.file_id), timeout=25.0)
+            photo_bytes = await asyncio.wait_for(tg_file.download_as_bytearray(), timeout=30.0)
+            asset_url = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: asset_uploader.upload_issue_image(
+                        repo_full_name=repo,
+                        file_bytes=bytes(photo_bytes),
+                        filename="screenshot.jpg",
+                        mime_type="image/jpeg",
+                    ),
                 ),
+                timeout=30.0,
             )
             img_md = f"![Screenshot]({asset_url})"
             body = f"{caption}\n\n{img_md}".strip() if caption else img_md
@@ -332,18 +335,21 @@ async def ni_enter_body(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         caption = (update.message.caption or "").strip()
         status_msg = await update.message.reply_text(" جاري رفع الصورة إلى GitHub...")
         try:
-            tg_file = await context.bot.get_file(doc.file_id)
-            doc_bytes = await tg_file.download_as_bytearray()
+            tg_file = await asyncio.wait_for(context.bot.get_file(doc.file_id), timeout=25.0)
+            doc_bytes = await asyncio.wait_for(tg_file.download_as_bytearray(), timeout=30.0)
             filename = doc.file_name or "image.png"
             mime_type = doc.mime_type or "image/png"
-            asset_url = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: asset_uploader.upload_issue_image(
-                    repo_full_name=repo,
-                    file_bytes=bytes(doc_bytes),
-                    filename=filename,
-                    mime_type=mime_type,
+            asset_url = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: asset_uploader.upload_issue_image(
+                        repo_full_name=repo,
+                        file_bytes=bytes(doc_bytes),
+                        filename=filename,
+                        mime_type=mime_type,
+                    ),
                 ),
+                timeout=30.0,
             )
             img_md = f"![Screenshot]({asset_url})"
             body = f"{caption}\n\n{img_md}".strip() if caption else img_md

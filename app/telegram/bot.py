@@ -211,7 +211,7 @@ def build_application(token: str) -> Application:
     app.add_handler(CommandHandler("ls", ls_handler))
     app.add_handler(CommandHandler("ps", ps_handler))
     app.add_handler(CommandHandler("pkill", pkill_handler))
-    app.add_handler(MessageHandler(filters.Document.ALL, incoming_file_handler))
+    app.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO | filters.ATTACHMENT, incoming_file_handler))
 
     app.add_handler(CallbackQueryHandler(personal_menu_handler, pattern="^personal:menu$"))
     app.add_handler(CallbackQueryHandler(

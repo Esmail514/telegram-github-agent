@@ -26,6 +26,7 @@ workspaces/
 *.sqlite3
 local_prompt_schedules.csv
 .agent_terminal*
+.agent_assets/
 
 # =============================================================================
 # Python

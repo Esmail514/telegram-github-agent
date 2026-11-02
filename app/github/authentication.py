@@ -46,7 +46,7 @@ def get_github_client() -> Github:
 
     # ---- PAT fallback --------------------------------------------------
     if settings.GITHUB_TOKEN is not None:
-        client = Github(auth=Auth.Token(settings.GITHUB_TOKEN.get_secret_value()))
+        client = Github(auth=Auth.Token(settings.GITHUB_TOKEN.get_secret_value()), timeout=20)
         logger.info("GitHub authenticated via Personal Access Token")
         return client
 
