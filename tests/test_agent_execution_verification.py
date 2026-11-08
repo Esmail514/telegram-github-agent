@@ -546,3 +546,17 @@ async def test_schedule_fields_completed_and_uncompleted(test_db):
         buttons = [btn.text for row in markup.inline_keyboard for btn in row]
         assert any("#20" in b for b in buttons)
         assert not any("#10" in b for b in buttons)
+        assert not any("عرض جميع المهام" in b for b in buttons)
+        assert any("رجوع للمهام المجدولة" in b for b in buttons)
+
+        # 4. Clean menu on sched_list (default entry point)
+        update.callback_query.data = "sched_list"
+        await schedule_list_command(update, context)
+        text, markup = mock_show.call_args[0][1], mock_show.call_args[0][2]
+        buttons = [btn.text for row in markup.inline_keyboard for btn in row]
+        assert any("إنشاء مهمة" in b for b in buttons)
+        assert any("التي لم تكتمل" in b for b in buttons)
+        assert any("عرض المهام المكتملة" in b for b in buttons)
+        assert not any("عرض جميع المهام" in b for b in buttons)
+        assert not any("#10" in b for b in buttons)
+        assert not any("#20" in b for b in buttons)

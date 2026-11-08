@@ -320,7 +320,11 @@ class JobExecutor:
         )
         from app.runner.local_prompt_schedules import LocalPromptScheduleStore
 
-        source_path = schedule_store_path or LocalPromptScheduleStore.for_project(workspace_path).path
+        source_path = schedule_store_path or (
+            LocalPromptScheduleStore.for_project(workspace_path).path
+            if (workspace_path / "local_prompt_schedules.csv").is_file()
+            else LocalPromptScheduleStore.from_settings().path
+        )
         return await self.start_job(
             repo_info=repo_info,
             issue_info=issue_info,

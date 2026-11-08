@@ -98,7 +98,7 @@ class LocalPromptScheduleStore:
                 if project.user_id != settings.TELEGRAM_ALLOWED_USER_ID:
                     continue
                 path = Path(project.path)
-                if path.is_dir():
+                if path.is_dir() and (path / "local_prompt_schedules.csv").is_file():
                     store = cls.for_project(path)
                     stores.setdefault(store.path, store)
         return list(stores.values())
@@ -127,6 +127,12 @@ class LocalPromptScheduleStore:
         ]
 
     async def is_trusted(self, db, owner_id: int) -> bool:
+        from app.config.settings import settings
+
+        if self.path == settings.local_prompt_schedules_path:
+            return True
+        if db is None:
+            return False
         async with db.conn.execute(
             "SELECT 1 FROM trusted_local_schedule_stores WHERE path = ? AND owner_id = ?",
             (str(self.path), owner_id),
@@ -172,6 +178,10 @@ class LocalPromptScheduleStore:
 
         owner_id = settings.TELEGRAM_ALLOWED_USER_ID
         if await self.is_trusted(db, owner_id):
+            if not self.path.exists():
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                with self.path.open("w", encoding="utf-8", newline="") as file:
+                    csv.DictWriter(file, fieldnames=_FIELDNAMES).writeheader()
             return
 
         def create_empty_exclusively() -> bool:

@@ -188,6 +188,11 @@ async def _local_schedules_for_chat(
             schedules.extend(await store.list_all(chat_id=chat_id, ignore_invalid=True))
         except ValueError:
             continue
+    # Exclude any executed/completed prompts so they NEVER appear in the bot
+    schedules = [
+        s for s in schedules
+        if getattr(s, "status", "").upper() != "COMPLETED"
+    ]
     return sorted(schedules, key=lambda item: item.scheduled_dt)
 
 
@@ -841,8 +846,14 @@ async def sched_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
         if not project_path.is_dir():
             await _show(update, "مسار المشروع غير متاح.", _mode_keyboard())
             return ConversationHandler.END
+        project_csv = project_path / "local_prompt_schedules.csv"
+        store = (
+            LocalPromptScheduleStore.for_project(project_path)
+            if project_csv.is_file()
+            else LocalPromptScheduleStore.from_settings()
+        )
         try:
-            schedule = await LocalPromptScheduleStore.for_project(project_path).create(
+            schedule = await store.create(
                 project_id=local_project_id,
                 project_name=local_project_name,
                 prompt=prompt,
@@ -855,7 +866,7 @@ async def sched_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
             )
         except UntrustedScheduleStoreError:
             return await _show_csv_trust_preview(
-                update, context, LocalPromptScheduleStore.for_project(project_path), retry=True
+                update, context, store, retry=True
             )
         except ValueError as exc:
             await _show(update, str(exc), _mode_keyboard())
@@ -866,7 +877,7 @@ async def sched_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
         _clear_schedule_context(context)
         await _show(
             update,
-            f"تمت جدولة Prompt محلي.\nالمعرف: `{schedule.id}`\nالموعد: `{schedule.display_time()}`\nCSV: `{project_path / 'local_prompt_schedules.csv'}`",
+            f"✅ تمت جدولة البرومبت بنجاح داخل البوت للمشروع `{local_project_name}`.\nالمعرف: `{schedule.id}`\nالموعد: `{schedule.display_time()}`",
             InlineKeyboardMarkup([[InlineKeyboardButton("المهام المجدولة", callback_data="sched_list")]]),
         )
         return ConversationHandler.END
@@ -911,7 +922,7 @@ async def _show_all_schedules(
     context: ContextTypes.DEFAULT_TYPE,
     *,
     show_completed: bool | None = None,
-    filter_type: str = "pending",
+    filter_type: str = "menu",
 ) -> None:
     chat_id = update.effective_chat.id if update.effective_chat else 0
     raw_issue_jobs = []
@@ -936,58 +947,66 @@ async def _show_all_schedules(
 
     pending_count = len(uncompleted_issue_jobs) + len(uncompleted_local_jobs)
     completed_count = len(completed_issue_jobs) + len(completed_local_jobs)
-    total_count = len(raw_issue_jobs) + len(all_local_jobs)
 
     # Determine active filter field
     if show_completed is True:
         active_filter = "completed"
     elif show_completed is False:
         active_filter = "pending"
-    else:
+    elif filter_type in ("pending", "completed", "menu"):
         active_filter = filter_type
-
-    if active_filter == "completed":
-        issue_jobs = completed_issue_jobs
-        local_jobs = completed_local_jobs
-    elif active_filter == "all":
-        issue_jobs = raw_issue_jobs
-        local_jobs = all_local_jobs
-    else:  # pending / uncompleted
-        active_filter = "pending"
-        issue_jobs = uncompleted_issue_jobs
-        local_jobs = uncompleted_local_jobs
+    else:
+        active_filter = "menu"
 
     rows: list[list[InlineKeyboardButton]] = []
     rows.append([InlineKeyboardButton("➕ إنشاء مهمة مجدولة", callback_data="menu:schedule")])
 
-    # Category fields buttons (حقول الاختيار)
-    if active_filter == "pending":
+    if active_filter == "menu":
         rows.append([
-            InlineKeyboardButton(f"⏳ التي لم تكتمل ({pending_count}) 🔘", callback_data="sched_list_pending"),
+            InlineKeyboardButton(f"⏳ التي لم تكتمل ({pending_count})", callback_data="sched_list_pending"),
             InlineKeyboardButton(f"📜 عرض المهام المكتملة ({completed_count})", callback_data="sched_list_completed"),
         ])
-        if total_count > 0:
-            rows.append([InlineKeyboardButton(f"📋 عرض جميع المهام ({total_count})", callback_data="sched_list_all")])
+        text = "📅 *المهام المجدولة*\nاختر من الخيارات أدناه:"
     elif active_filter == "completed":
+        issue_jobs = completed_issue_jobs
+        local_jobs = completed_local_jobs
         rows.append([
             InlineKeyboardButton(f"⏳ عرض المهام التي لم تكتمل ({pending_count})", callback_data="sched_list_pending"),
             InlineKeyboardButton(f"✅ المكتملة ({completed_count}) 🔘", callback_data="sched_list_completed"),
         ])
-        if total_count > 0:
-            rows.append([InlineKeyboardButton(f"📋 عرض جميع المهام ({total_count})", callback_data="sched_list_all")])
-    else:  # all
+        for job in issue_jobs:
+            status_icon = "✅ " if job.status == "COMPLETED" else "⏳ "
+            project = f" | {job.project_name}" if job.project_name else ""
+            label = f"{status_icon}{job.repo_full_name.split('/')[-1]} #{job.issue_number}{project} — {job.display_time()}"
+            rows.append([InlineKeyboardButton(label[:60], callback_data=f"sched_open:{job.id}")])
+        rows.extend([list(row) for row in _local_schedule_keyboard(local_jobs).inline_keyboard])
+        rows.append([InlineKeyboardButton("⬅️ رجوع للمهام المجدولة", callback_data="sched_list")])
+
+        if issue_jobs or local_jobs:
+            header = f"📅 *المهام المجدولة — المهام المكتملة ({completed_count})*"
+            text = f"{header}\nاختر مهمة لعرض تفاصيلها، أو اختر حقلًا آخر من الأزرار أعلاه."
+        else:
+            text = f"📅 *المهام المجدولة — المهام المكتملة ({completed_count})*\nلا توجد مهام مكتملة حاليًا."
+    else:  # pending
+        issue_jobs = uncompleted_issue_jobs
+        local_jobs = uncompleted_local_jobs
         rows.append([
-            InlineKeyboardButton(f"⏳ عرض المهام التي لم تكتمل ({pending_count})", callback_data="sched_list_pending"),
+            InlineKeyboardButton(f"⏳ التي لم تكتمل ({pending_count}) 🔘", callback_data="sched_list_pending"),
             InlineKeyboardButton(f"📜 عرض المهام المكتملة ({completed_count})", callback_data="sched_list_completed"),
         ])
-        rows.append([InlineKeyboardButton(f"📋 جميع المهام ({total_count}) 🔘", callback_data="sched_list_all")])
+        for job in issue_jobs:
+            status_icon = "✅ " if job.status == "COMPLETED" else "⏳ "
+            project = f" | {job.project_name}" if job.project_name else ""
+            label = f"{status_icon}{job.repo_full_name.split('/')[-1]} #{job.issue_number}{project} — {job.display_time()}"
+            rows.append([InlineKeyboardButton(label[:60], callback_data=f"sched_open:{job.id}")])
+        rows.extend([list(row) for row in _local_schedule_keyboard(local_jobs).inline_keyboard])
+        rows.append([InlineKeyboardButton("⬅️ رجوع للمهام المجدولة", callback_data="sched_list")])
 
-    for job in issue_jobs:
-        status_icon = "✅ " if job.status == "COMPLETED" else "⏳ "
-        project = f" | {job.project_name}" if job.project_name else ""
-        label = f"{status_icon}{job.repo_full_name.split('/')[-1]} #{job.issue_number}{project} — {job.display_time()}"
-        rows.append([InlineKeyboardButton(label[:60], callback_data=f"sched_open:{job.id}")])
-    rows.extend([list(row) for row in _local_schedule_keyboard(local_jobs).inline_keyboard])
+        if issue_jobs or local_jobs:
+            header = f"📅 *المهام المجدولة — المهام التي لم تكتمل ({pending_count})*"
+            text = f"{header}\nاختر مهمة لعرض تفاصيلها، أو اختر حقلًا آخر من الأزرار أعلاه."
+        else:
+            text = f"📅 *المهام المجدولة — المهام التي لم تكتمل ({pending_count})*\nلا توجد مهام نشطة أو غير مكتملة حاليًا."
 
     if db is not None:
         for store in (await LocalPromptScheduleStore.discover_untrusted(db))[:8]:
@@ -995,25 +1014,6 @@ async def _show_all_schedules(
                 f"📄 اعتماد CSV: {store.path.parent.name}",
                 callback_data=encode_callback_payload("csv_trust:", str(store.path)),
             )])
-
-    if active_filter == "completed":
-        if issue_jobs or local_jobs:
-            header = f"📅 *المهام المجدولة — المهام المكتملة ({completed_count})*"
-            text = f"{header}\nاختر مهمة لعرض تفاصيلها، أو اختر حقلًا آخر من الأزرار أعلاه."
-        else:
-            text = f"📅 *المهام المجدولة — المهام المكتملة ({completed_count})*\nلا توجد مهام مكتملة حاليًا."
-    elif active_filter == "all":
-        if issue_jobs or local_jobs:
-            header = f"📅 *المهام المجدولة — جميع المهام ({total_count})*"
-            text = f"{header}\nاختر مهمة لعرض تفاصيلها، أو اختر حقلًا آخر من الأزرار أعلاه."
-        else:
-            text = "📅 لا توجد أي مهام مجدولة حاليًا."
-    else:  # pending
-        if issue_jobs or local_jobs:
-            header = f"📅 *المهام المجدولة — المهام التي لم تكتمل ({pending_count})*"
-            text = f"{header}\nاختر مهمة لعرض تفاصيلها، أو اختر حقلًا آخر من الأزرار أعلاه."
-        else:
-            text = f"📅 *المهام المجدولة — المهام التي لم تكتمل ({pending_count})*\nلا توجد مهام نشطة أو غير مكتملة حاليًا."
 
     await _show(update, text, InlineKeyboardMarkup(rows))
 
@@ -1102,12 +1102,10 @@ async def schedule_list_command(update: Update, context: ContextTypes.DEFAULT_TY
     data = query.data if query else ""
     if data == "sched_list_completed":
         filter_type = "completed"
-    elif data == "sched_list_all":
-        filter_type = "all"
-    elif data in {"sched_list_pending", "sched_list"}:
+    elif data == "sched_list_pending":
         filter_type = "pending"
     else:
-        filter_type = "pending"
+        filter_type = "menu"
     await _show_all_schedules(update, context, filter_type=filter_type)
 
 
